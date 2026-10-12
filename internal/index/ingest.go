@@ -962,15 +962,17 @@ func applyRenamedFiles(m *Manifest, renamed map[string]string) map[string]bool {
 // rename moved it to. Nothing was read, so the pairs keep their rows and take
 // the new project; the command tables are mined again from the records.
 func reprojectSidecars(dir string, sessions map[string]SessionMeta, keys map[string]bool) {
-	if pairs := ReadFixes(dir); len(pairs) > 0 {
+	if raw, ok := readFixRaw(dir); !ok {
+		remineFixes(dir)
+	} else if len(raw) > 0 {
 		dirty := false
-		for i, p := range pairs {
+		for i, p := range raw {
 			if keys[p.Key] {
-				pairs[i].Project, dirty = sessions[p.Key].Project, true
+				raw[i].Project, dirty = sessions[p.Key].Project, true
 			}
 		}
 		if dirty {
-			_ = writeGobAtomic(fixesPath(dir), pairs)
+			writeFixTables(dir, raw)
 		}
 	}
 	buildCommandsFromIndex(dir)
@@ -2110,6 +2112,83 @@ func (m msgSeen) dup(key, role string, ts time.Time, text string) bool {
 	}
 	m[k] = true
 	return false
+}
+
+// repeatKey is a message as the record dedupe sees it: role, time and text.
+type repeatKey struct {
+	role string
+	at   int64
+	text uint64
+}
+
+func repeatKeyOf(role string, at time.Time, text string) repeatKey {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(text))
+	return repeatKey{role, at.UnixNano(), h.Sum64()}
+}
+
+// dropRepeatedMessages drops a message that repeats an earlier one of the
+// session verbatim, time included, before anything is derived from it. The
+// record log already kept one copy, and the counts and sidecars took both, so
+// a line a store wrote twice counted as two turns in a rebuild and as however
+// many passes it was split across in an update. A message without a time or
+// text is kept: two of those are not evidence of a duplicate.
+func dropRepeatedMessages(ms []model.Message) []model.Message {
+	var seen map[repeatKey]bool
+	out := ms[:0]
+	for _, m := range ms {
+		if !m.Time.IsZero() && strings.TrimSpace(m.Text) != "" {
+			if seen == nil {
+				seen = make(map[repeatKey]bool, len(ms))
+			}
+			k := repeatKeyOf(m.Role, m.Time, m.Text)
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+// dropStoredRepeats is dropRepeatedMessages for a tail: it drops the messages
+// of s the index already holds from the same file, and marks every stored
+// message of the session in seen so its records are not written twice. Only a
+// message no newer than the row can repeat one, so a tail that is all new
+// reads nothing.
+func dropStoredRepeats(rw *recordWriter, dir string, s *model.Session, row SessionMeta, seen msgSeen) {
+	if row.ID == "" {
+		return
+	}
+	older := false
+	for _, m := range s.Messages {
+		if !m.Time.IsZero() && !m.Time.After(row.Updated) && strings.TrimSpace(m.Text) != "" {
+			older = true
+			break
+		}
+	}
+	if !older || rw.w.Flush() != nil {
+		return
+	}
+	key := s.Harness + ":" + s.ID
+	stored := map[repeatKey]bool{}
+	if err := eachRecordForKeys(filepath.Join(dir, "records.bin"), rw.tables, map[string]bool{key: true}, func(r Record) {
+		seen.dup(key, r.Role, r.Time, r.Text)
+		if r.SourcePath == s.Path {
+			stored[repeatKeyOf(r.Role, r.Time, r.Text)] = true
+		}
+	}); err != nil {
+		return
+	}
+	out := s.Messages[:0]
+	for _, m := range s.Messages {
+		if !m.Time.IsZero() && stored[repeatKeyOf(m.Role, m.Time, m.Text)] {
+			continue
+		}
+		out = append(out, m)
+	}
+	s.Messages = out
 }
 
 func metaForSession(s model.Session) SessionMeta {
@@ -4384,6 +4463,11 @@ func updateIndexOnce(dir, harness, scope string, files map[string]FileState, for
 	}
 	setDatabaseStoreWatermarks(m.Files, m.Sessions)
 	m.RecordStrings = tbl.strs
+	// Ahead of the commit, which checks its entries against the new log
+	// rather than parsing every session that carries a wall again.
+	if b, err := os.ReadFile(filepath.Join(dir, frictionTextsFile)); err == nil {
+		_ = os.WriteFile(filepath.Join(tmp, frictionTextsFile), b, 0o600)
+	}
 	if err := writeManifest(tmp, m); err != nil {
 		return err
 	}
@@ -4392,7 +4476,7 @@ func updateIndexOnce(dir, harness, scope string, files map[string]FileState, for
 	// has something to say, and the carried file is what a quiet update leaves.
 	// The command table is recomputed whole, and an empty one removes the
 	// carried file, as a full build would not write it (#4441).
-	mergeFixes(dir, tmp, replacements, replaceKeys)
+	mergeFixes(dir, tmp, sessionKeys(m), replacements, replaceKeys)
 	buildCommandsFromIndex(tmp)
 	for key := range replaceKeys {
 		dropped[key] = true
@@ -4417,7 +4501,7 @@ func updateIndexOnce(dir, harness, scope string, files map[string]FileState, for
 // update are missing until a full build, which is the ordinary staleness of a
 // derived file and not the same thing as having none.
 func carrySidecars(dir, tmp string) {
-	for _, name := range []string{fixesFile, commandsFile, cooccurFile} {
+	for _, name := range []string{fixesFile, fixRawFile, commandsFile, cooccurFile} {
 		b, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			continue
@@ -4679,6 +4763,9 @@ func appendIncremental(dir, harness, scope string, old Manifest, files map[strin
 		// text, so the same session got different signatures depending on which
 		// path had touched it last.
 		preRedactSessions(&m, ss)
+		for i := range ss {
+			dropStoredRepeats(rw, dir, &ss[i], m.Sessions[ss[i].Harness+":"+ss[i].ID], seenMsgs)
+		}
 		// Kept for the sidecars below, after redaction so a pair cannot carry a
 		// credential the records do not.
 		appended = append(appended, ss...)
@@ -4871,10 +4958,12 @@ func appendIncremental(dir, harness, scope string, old Manifest, files map[strin
 	// file. The replacement path does the same three things after it carries
 	// them over; this path used to do none of them, which was survivable while
 	// it only ever saw a tail and is not once a new conversation comes through
-	// here (#3500). No `replaced` set: nothing was re-read, so every pair
-	// already on file is still earned — the new ones merge in beside them, and
-	// a candidate on file is what a second sighting needs to be promoted.
-	mergeFixes(dir, dir, appended, map[string]bool{})
+	// here (#3500). A session whose tail brought a tool record is mined again
+	// whole, so a pair that starts before the tail is found; the rest of the
+	// table is still earned, and a candidate on file is what a second sighting
+	// needs to be promoted.
+	whole, rewhole := wholeSessionsForFixes(dir, m, appended)
+	mergeFixes(dir, dir, nil, whole, rewhole)
 	// The two command tables are mined from every record the index holds, which
 	// is a scan of records.bin — 2.9s of an 8.6s pass on a 191 MB store. Nothing
 	// this pass added can change them unless it added a command or the output of
@@ -4991,6 +5080,7 @@ func wholeSession(p string, s model.Session) (model.Session, bool) {
 	}
 	for _, w := range ss {
 		if w.Harness == s.Harness && w.ID == s.ID {
+			w.Messages = dropRepeatedMessages(w.Messages)
 			return w, true
 		}
 	}
@@ -5581,6 +5671,7 @@ func preRedactSessions(m *Manifest, ss []model.Session) {
 						mu.Unlock()
 					}
 				}
+				s.Messages = dropRepeatedMessages(s.Messages)
 			}
 		}()
 	}

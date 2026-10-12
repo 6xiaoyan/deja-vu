@@ -25,11 +25,11 @@ import (
 	"github.com/vshulcz/deja-vu/internal/policy"
 )
 
-// recordLogScans counts walks of the record log. There are no per-session
-// offsets, so every walk reads the whole of records.bin — which is why a
-// caller asking for sessions one at a time is a cost bug and not a style
-// point (#1069). Exported through RecordLogScans for tests that assert a
-// batch path stayed one pass.
+// recordLogScans counts keyed passes over the record log. The offset table
+// (record_offsets.go) turns most of them into a few reads, but a pass without
+// one still walks the whole of records.bin, so a caller asking for sessions
+// one at a time is still a cost bug (#1069). Exported through RecordLogScans
+// for tests that assert a batch path stayed one pass.
 var recordLogScans int64
 
 // RecordLogScans reports how many times this process walked the record log.
@@ -334,7 +334,15 @@ func eachRecordForKeysInRoles(path string, t *recordTables, want, roles map[stri
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	r := bufio.NewReaderSize(f, 1024*1024)
+	if ok, err := eachRecordForKeysByOffsets(f, filepath.Dir(path), t, want, roles, fn); ok || err != nil {
+		return err
+	}
+	return walkRecordsForKeys(bufio.NewReaderSize(f, 1024*1024), t, want, roles, fn)
+}
+
+// walkRecordsForKeys is the walk eachRecordForKeysInRoles does without a
+// table, from wherever r stands to the end of the log.
+func walkRecordsForKeys(r *bufio.Reader, t *recordTables, want, roles map[string]bool, fn func(Record)) error {
 	var hdr [4]byte
 	for {
 		if _, err := io.ReadFull(r, hdr[:]); err != nil {

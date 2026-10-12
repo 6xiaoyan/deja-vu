@@ -151,6 +151,7 @@ func takeSnap(t *testing.T, dir string) snap {
 		s.records = append(s.records, fmt.Sprintf("%s|%s|%s|%s|%q", r.Record.Key, r.Record.Role, r.Record.Time.UTC().Format("2006-01-02T15:04:05.000"), filepath.Base(r.Record.SourcePath), r.Record.Text))
 	}
 	sort.Strings(s.records)
+	checkRecordOffsets(t, dir, m, recs)
 	files, _ := filepath.Glob(filepath.Join(dir, "buckets", "*.bin"))
 	for _, f := range files {
 		data, err := readBucket(f)
@@ -179,6 +180,7 @@ func takeSnap(t *testing.T, dir string) snap {
 		s.sidecars[name] = inUTC(string(b))
 	}
 	add("compactions", m.Compactions)
+	add("friction texts", checkFrictionTexts(t, dir, m))
 	var kept []string
 	for p, f := range m.Files {
 		if f.Kept {
@@ -195,6 +197,14 @@ func takeSnap(t *testing.T, dir string) snap {
 	}
 	sort.Strings(fxs)
 	add("fixes", fxs)
+	raw, _ := readFixRaw(dir)
+	var rws []string
+	for _, p := range raw {
+		b, _ := json.Marshal(p)
+		rws = append(rws, string(b))
+	}
+	sort.Strings(rws)
+	add("fixraw", rws)
 	cmds := ReadCommands(dir)
 	var cs []string
 	for _, c := range cmds {
@@ -686,5 +696,17 @@ func TestDeleteMatchesRebuild(t *testing.T) {
 		if err := os.Remove(h.path("app", "s2")); err != nil {
 			t.Fatal(err)
 		}
+	})
+}
+
+// A line the store wrote twice, the copy arriving in a later append: the
+// update wrote a second record and stopped counting at the copy, where a
+// rebuild keeps one record and counts the line once.
+func TestARepeatedLineMatchesRebuild(t *testing.T) {
+	h := newTwoWayEnv(t)
+	h.twoWays("repeated line", func() {
+		h.put("app", "s1", hPrompt("app", "s1", 2, 0, "why does the pool fail")+hSay("app", "s1", 2, 0, "Looking at it."))
+	}, func() {
+		h.add("app", "s1", hSay("app", "s1", 2, 0, "The pool needs a fix.")+hSay("app", "s1", 2, 0, "Looking at it."))
 	})
 }

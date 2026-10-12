@@ -521,6 +521,16 @@ func commitManifest(dir string, m Manifest, wroteRecords bool) error {
 	// then answers from the manifest before this one. The writer knows, so it
 	// says so.
 	invalidateManifestCache(dir)
+	if err == nil && wroteRecords {
+		// Best effort: a table that could not be written leaves readers
+		// walking the log, which is what they did before it existed.
+		_ = writeRecordOffsets(dir, tablesFromManifest(m), core.RecordsSize)
+	}
+	if err == nil {
+		// After the offset table, which it reads through. Also on a commit
+		// without records: a forget or a rename moves the walls.
+		_ = writeFrictionTexts(dir, m, core.RecordsSize)
+	}
 	return err
 }
 
