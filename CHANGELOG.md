@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The code a Gemini CLI session changed, and that of any harness read through the generic edit reader, leaves out a tool call marked failed, an edit or a patch alike: a `replace` Gemini refused showed as code the session wrote (#4974).
+
 ## [0.22.1] - 2026-10-12
 
 Reading a session back now shows the code it changed, each edit as the lines
