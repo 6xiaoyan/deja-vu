@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -162,10 +163,10 @@ func TestEmbedIndexOnlyEmbedsANewSessionsOwnRecords(t *testing.T) {
 	}
 }
 
-// The other side of the rule, end to end: a rebuild moves every record, so no
-// offset survives and every vector has to be made again. Cheap would be wrong
-// here.
-func TestEmbedIndexRebuildsEverythingAfterARebuild(t *testing.T) {
+// A rewrite moves every record, and the vectors used to go with the offsets:
+// the next run embedded the whole store again (#4976). Each vector now finds
+// its record by identity, so only the record the rewrite changed is sent.
+func TestEmbedIndexEmbedsOnlyWhatARewriteChanged(t *testing.T) {
 	var embedded atomic.Int64
 	client := countingClient(t, &embedded)
 	dir, _ := embedStore(t)
@@ -186,7 +187,84 @@ func TestEmbedIndexRebuildsEverythingAfterARebuild(t *testing.T) {
 	if _, err := EmbedIndex(dir, client, nil); err != nil {
 		t.Fatal(err)
 	}
-	if again := embedded.Load(); again < 2 {
-		t.Errorf("a replaced records.bin re-embedded %d records, want every one of them", again)
+	if again := embedded.Load(); again != 1 {
+		t.Errorf("a replaced records.bin re-embedded %d records, want only the rewritten 1", again)
+	}
+}
+
+// A version 1 sidecar has no identities, so its vectors cannot follow a rewrite
+// and every record is embedded again, as before.
+func TestAVersion1SidecarIsEmbeddedAgainAfterARewrite(t *testing.T) {
+	var embedded atomic.Int64
+	client := countingClient(t, &embedded)
+	dir, _ := embedStore(t)
+	s, err := EmbedIndex(dir, client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range s.Vectors {
+		s.Vectors[i].Ident = 0
+	}
+	if err := write(dir, s); err != nil {
+		t.Fatal(err)
+	}
+	root := os.Getenv("DEJA_CLAUDE_ROOT")
+	rewound := `{"type":"user","sessionId":"a","timestamp":"2026-01-04T00:00:00Z","message":{"role":"user","content":"the scheduler story, rewritten"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(root, "project", "a.jsonl"), []byte(rewound), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := index.Ensure(dir, "", false, nil); err != nil {
+		t.Fatal(err)
+	}
+	embedded.Store(0)
+	if _, err := EmbedIndex(dir, client, nil); err != nil {
+		t.Fatal(err)
+	}
+	if again := embedded.Load(); again != 5 {
+		t.Errorf("a version 1 sidecar after a rewrite re-embedded %d records, want all 5", again)
+	}
+}
+
+// A version 1 sidecar on the index it was built for keeps every vector: the
+// next run gives each its record's identity and embeds nothing.
+func TestAVersion1SidecarIsRekeyedWhileItsLayoutHolds(t *testing.T) {
+	var embedded atomic.Int64
+	client := countingClient(t, &embedded)
+	dir, _ := embedStore(t)
+	s, err := EmbedIndex(dir, client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range s.Vectors {
+		s.Vectors[i].Ident = 0
+	}
+	if err := write(dir, s); err != nil {
+		t.Fatal(err)
+	}
+	embedded.Store(0)
+	again, err := EmbedIndex(dir, client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := embedded.Load(); n != 0 {
+		t.Errorf("a version 1 sidecar on its own index re-embedded %d records, want none", n)
+	}
+	if len(again.Vectors) != 5 || !keyed(again) {
+		t.Errorf("rekeyed sidecar holds %d vectors, keyed=%v; want 5 and true", len(again.Vectors), keyed(again))
+	}
+}
+
+// The identity reads the length of the whole text and only its first 256
+// bytes, so two long records that start alike but differ in length are told
+// apart, and a record read again names itself the same way.
+func TestRecordIdentTellsLongRecordsApart(t *testing.T) {
+	head := strings.Repeat("the scheduler retries ", 20)
+	a := index.Record{Key: "claude:a", Role: "user", Text: head + "once"}
+	b := index.Record{Key: "claude:a", Role: "user", Text: head + "twice over"}
+	if RecordIdent(a) == RecordIdent(b) {
+		t.Error("two long records of different lengths share an identity")
+	}
+	if RecordIdent(a) != RecordIdent(index.Record{Key: "claude:a", Role: "user", Text: head + "once"}) {
+		t.Error("the same record read twice named itself differently")
 	}
 }
