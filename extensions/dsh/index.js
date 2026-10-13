@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { argv, contributions, exitStatus, guarded, resultText } from "./lib.js";
+import { argv, contributions, exitStatus, guarded, newestEvents, noteBoard, resultText, splitHookReply } from "./lib.js";
 
 const require = createRequire(import.meta.url);
 
@@ -216,7 +216,7 @@ function tools(ctx) {
   })));
 }
 
-function command(ctx) {
+function command(ctx, board) {
   guarded(() => ctx.commands.register({
     name: "deja",
     description: "Search this machine's past AI coding sessions",
@@ -232,9 +232,12 @@ function command(ctx) {
       // of the words people most want history about is `install`.
       const out = run(argv("search", [], query));
       if (!INSTALLED) return { kind: "error", text: MISSING };
-      // dsh shows a person nothing the hooks print — the digest goes to the
-      // model — so the reply to /deja is where deja's own notes reach them.
-      const notes = run(["hook-context", "--notes"]);
+      // Outside dsh web a person sees nothing the hooks print — the digest
+      // goes to the model — so the reply to /deja is where deja's own notes
+      // reach them. In dsh web the session's lines may still be waiting on the
+      // board for a page that has not asked; they go here, once, instead.
+      const waiting = board ? board.take(sessionId(invocation && invocation.agent)) : [];
+      const notes = [...waiting, run(["hook-context", "--notes"])].filter(Boolean).join("\n");
       return { kind: "success", text: notes ? answer(out) + "\n\n" + notes : answer(out) };
     },
   }));
@@ -270,7 +273,7 @@ function userText(message) {
 // one-shot on the session id in deja's ledger, which survives a resume in a new
 // process; the Set is the in-process guard that keeps the long-lived web and
 // tui profiles from spawning deja on every assembly of a session already shown.
-function autoDigest(ctx) {
+function autoDigest(ctx, board) {
   const seen = new Set();
 
   guarded(() =>
@@ -283,9 +286,12 @@ function autoDigest(ctx) {
         const sid = sessionId(agent);
         if (sid && seen.has(sid)) return "";
         if (sid) seen.add(sid);
-        return run(
+        return askHook(
           ["hook-context", "--plain"],
+          ["hook-context"],
           JSON.stringify({ session_id: sid, cwd: sessionCwd(agent), source: "startup", deja_once: true }),
+          sid,
+          board,
         );
       },
     }),
@@ -311,7 +317,20 @@ function sessionCwd(agent) {
   return (header && header.cwd) || process.cwd();
 }
 
-function autoRecall(ctx) {
+// askHook runs a hook once for both readers. Where a page will show the
+// person's lines, deja is asked for its JSON reply: additionalContext, the
+// text --plain prints, goes to the model and systemMessage waits on the board.
+// Anywhere else — tui, headless, sdk — it stays --plain. deja marks a note
+// shown when it prints it, so asking for notes nobody will read spends them,
+// and `/deja` and the next Claude Code session would not see them either.
+function askHook(plain, json, payload, sid, board) {
+  if (!board.hasReader()) return run(plain, payload);
+  const reply = splitHookReply(run(json, payload));
+  board.push(sid, reply.notes);
+  return reply.context;
+}
+
+function autoRecall(ctx, board) {
   let asked = "";
   let askedIn = "";
   let askedBy = "";
@@ -339,13 +358,52 @@ function autoRecall(ctx) {
           asked = prompt;
           askedIn = cwd;
           askedBy = sid;
-          recalled = run(["hook-prompt", "--plain"], JSON.stringify({ prompt, cwd, session_id: sid }));
+          recalled = askHook(
+            ["hook-prompt", "--plain"],
+            ["hook-prompt"],
+            JSON.stringify({ prompt, cwd, session_id: sid }),
+            sid,
+            board,
+          );
         }
         // Silence is the common case: this speaks only when the history answers.
         return recalled;
       },
     }),
   );
+}
+
+// The person's half. dsh shows nobody what a plugin hands the model, and has
+// no notice channel a host plugin can write to, so deja's lines wait on a board
+// and the browser half (client.js) asks for them under the composer. The route
+// rides dsh's own /api mount, which applies the same Host/Origin fence and
+// browser login as every other call the page makes. Only a profile that serves
+// that page — the connection service and a web server both — registers it;
+// headless, tui, sdk and an older dsh never do, and keep asking deja for
+// --plain. A second copy of the plugin finds the path taken and stands down.
+const NOTES_PATH = "/api/deja-notes";
+
+function notesRoute(ctx, board) {
+  if (typeof ctx.inject !== "function") return;
+  try {
+    ctx.inject(["connection", "webServer"], (c) => {
+      const registered = guarded(() =>
+        c.connection.fetch.register({
+          path: NOTES_PATH,
+          methods: ["GET"],
+          requestBody: "buffered",
+          fetch: async (request) => {
+            let sid = "";
+            try {
+              sid = bareSessionId(new URL(request.url).searchParams.get("session"));
+            } catch {}
+            return Response.json({ notes: sid ? board.take(sid) : [] }, { headers: { "cache-control": "no-store" } });
+          },
+        }),
+      );
+      if (registered) board.setReader();
+    });
+  } catch {}
 }
 
 // runAsync is run for a seam dsh awaits, so the event loop goes on while deja
@@ -519,10 +577,7 @@ function noteMessage(text) {
 // carried it in, so both are read. Anything a plugin contributed is skipped:
 // those carry a source of their own.
 function lastHumanText(agent) {
-  const events = agent && agent.session && agent.session.events;
-  if (!Array.isArray(events)) return "";
-  for (let i = events.length - 1; i >= 0; i--) {
-    const event = events[i];
+  for (const event of newestEvents(agent && agent.session)) {
     if (!event) continue;
     if (event.type === "user/message" && isHuman(event.data)) return userText(event.data);
     if (event.type === "agent/inbox/spliced") {
@@ -568,11 +623,13 @@ function apply(ctx, config) {
     { command: installedByCLI("command.js"), auto: installedByCLI("auto.js") },
     config,
   );
+  const board = noteBoard();
   if (adds.tools) tools(ctx);
-  if (adds.command) command(ctx);
+  if (adds.command) command(ctx, board);
   if (adds.recall) {
-    autoDigest(ctx);
-    autoRecall(ctx);
+    autoDigest(ctx, board);
+    autoRecall(ctx, board);
+    notesRoute(ctx, board);
     toolNotes(ctx);
     sessionEnds(ctx);
   }
