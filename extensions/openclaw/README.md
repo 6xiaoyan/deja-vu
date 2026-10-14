@@ -48,6 +48,35 @@ what is missing.
   concluded).
 - **`/deja <query>`**: the same search, answered to you rather than the model.
 
+In a 1:1 chat with you on a channel (Telegram, Slack, Discord and the rest),
+a reply that was answered from your history gets one italic line under it:
+
+```
+↺ you've been here: "how should the zorbit queue drain on deploy" · Oct 4 · deja
+```
+
+It is added through `reply_payload_sending` after the transcript is written,
+so the model never sees it and gets exactly the text it got before. It shows
+only when all of these hold, and anything missing or unknown means no line:
+
+- the message came in a 1:1 chat: OpenClaw said `isGroup: false`, the session
+  key names no group, channel, thread or topic, and any chat type it gave is
+  `direct`;
+- the sender is you: `commands.ownerAllowFrom`, or the channel's `allowFrom`
+  when it lists exactly one id;
+- the channel sends replies whole: its streaming is set off, with no block
+  streaming turned on (`streaming.block.enabled` or the older `blockStreaming`,
+  on the channel or an account), e.g. `channels.telegram.streaming.mode: "off"`.
+  Telegram's default preview streaming sends a reply in chunks with no final
+  message to carry the line, so there deja is not even asked for it and the
+  receipt stays unspent;
+- the reply is the final text reply of that same run, to that same
+  conversation, and OpenClaw's delivery calls the chat `direct`. A media or voice reply, or a run that ends without a reply,
+  gets nothing, and the next message drops it.
+
+No other deja note is ever sent to a channel: those still come with `/deja`.
+`"receipt": false` in the plugin config turns the line off.
+
 ## Config
 
 ```json
@@ -57,15 +86,16 @@ what is missing.
       "deja-vu": {
         "enabled": true,
         "hooks": { "allowConversationAccess": true },
-        "config": { "autoRecall": true, "tools": true, "bin": "/opt/homebrew/bin/deja" }
+        "config": { "autoRecall": true, "tools": true, "receipt": true, "bin": "/opt/homebrew/bin/deja" }
       }
     }
   }
 }
 ```
 
-All three are optional. `autoRecall: false` keeps the tools and drops the
-per-turn recall; `tools: false` the reverse.
+All are optional. `autoRecall: false` keeps the tools and drops the
+per-turn recall; `tools: false` the reverse. `receipt: false` drops the line
+under replies in your DMs.
 
 `hooks.allowConversationAccess` is OpenClaw's grant, not the plugin's: 2026.8.1
 and later run a non-bundled plugin's `before_prompt_build` only with it, and a

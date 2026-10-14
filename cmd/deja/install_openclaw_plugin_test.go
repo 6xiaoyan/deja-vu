@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -214,6 +215,186 @@ func TestOpenClawPluginUsesThePhaseHooks(t *testing.T) {
 	for _, want := range []string{`"agent_turn_prepare"`, `"before_prompt_build"`} {
 		if !strings.Contains(js, want) {
 			t.Fatalf("missing %s:\n%s", want, js)
+		}
+	}
+}
+
+// deja's receipt reaches the person in a 1:1 chat with the owner: the prompt
+// hook asks once for the JSON reply, the model gets what --plain prints, and
+// the final reply on its way to Telegram carries one short receipt line as a
+// context block. Everything else stays --plain and leaves the reply alone: a
+// group, a group whose channel says isGroup false, the TUI, receipt:false, a
+// stranger's DM after an owner turn that never replied (every DM shares
+// agent:main:main), a block-stream chunk, and a DM on a channel that streams
+// its replies, where deja is not asked for a receipt that could not show.
+func TestOpenClawPluginShowsTheReceiptInAnOwnerDM(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stub deja is a shell script")
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is needed to run the plugin openclaw would run")
+	}
+	home := t.TempDir()
+	stub := filepath.Join(home, "deja")
+	reply := `{"systemMessage":"deja-vu — you have been here: \"zorbit drain\" (Oct 7 · via: zorbit, drain)","hookSpecificOutput":{"additionalContext":"RECALLED drain with --grace 40"}}`
+	script := "#!/bin/sh\nin=$(cat)\nprintf '%s\\n' \"$*\" >> \"$DEJA_CALLS\"\n" +
+		"case \"$in\" in *zorbit*) ;; *) exit 0 ;; esac\n" +
+		"case \"$*\" in\n" +
+		"  'hook-prompt --plain') printf 'RECALLED drain with --grace 40' ;;\n" +
+		"  hook-prompt) printf '%s\\n' '" + reply + "' ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plugin := filepath.Join(home, "index.mjs")
+	if err := os.WriteFile(plugin, []byte(openclawPluginJS(stub)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	driver := `
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+const calls = process.env.DEJA_CALLS;
+const owner = { channels: { telegram: { allowFrom: ["4242"], streaming: { mode: "off" } }, googlechat: { allowFrom: ["4242"], streaming: "off" } } };
+// Each case is a run of turns on one fresh plugin; the last turn's reply is judged.
+const cases = {
+  dm: [{}],
+  group: [{ key: "agent:main:telegram:group:-100", conv: "-100", isGroup: true }],
+  unnamedGroup: [{ key: "agent:main:googlechat:group:spaces-a", channel: "googlechat", conv: "spaces-a", isGroup: false }],
+  tui: [{ channel: "webchat" }],
+  off: [{ config: { receipt: false } }],
+  stranger: [{ kinds: [] }, { sender: "7", prompt: "zorbit, hi" }],
+  block: [{ kinds: ["block"] }],
+  streaming: [{ host: { channels: { telegram: { allowFrom: ["4242"] } } }, kinds: ["block"] }],
+  legacyBlock: [{ host: { channels: { telegram: { allowFrom: ["4242"], streaming: "off", blockStreaming: true } } } }],
+  // session.scope "global": no group word in the key, so the delivery's chat type decides.
+  global: [{ key: "global", chatType: null }],
+  slack: [{ host: { channels: { slack: { allowFrom: ["U9"], streaming: "off" } } }, key: "agent:main:slack:direct:u9",
+    channel: "slack", sender: "U9", conv: "D0123", replyConv: "slack:channel:D0123" }],
+  twice: [{ prompts: 2 }],
+};
+const out = {};
+let run = 0;
+for (const [name, turns] of Object.entries(cases)) {
+  writeFileSync(calls, "");
+  const { default: plugin } = await import("` + plugin + `?" + name);
+  const hooks = {};
+  plugin.register({ on: (n, fn) => { hooks[n] = fn }, pluginConfig: turns[0].config || {}, config: turns[0].host || owner });
+  let last;
+  for (const t of turns) {
+    const key = t.key || "agent:main:main", channel = t.channel || "telegram", sender = t.sender || "4242";
+    const conv = t.conv || sender, runId = "run-" + ++run;
+    const chatType = t.chatType === undefined ? (t.isGroup ? "group" : "direct") : t.chatType;
+    await hooks.before_dispatch?.({ sessionKey: key, channel, senderId: sender, isGroup: t.isGroup ?? false },
+      { sessionKey: key, channelId: channel, conversationId: conv, senderId: sender });
+    let built;
+    for (let i = 0; i < (t.prompts || 1); i++) {
+      built = (await hooks.before_prompt_build({ prompt: t.prompt || "what did we decide about the zorbit drain", messages: [] },
+        { sessionKey: key, sessionId: "s", channel, senderId: sender, trigger: "user", runId })) ?? built;
+    }
+    const sent = [];
+    for (const kind of t.kinds ?? ["final"]) {
+      sent.push(hooks.reply_payload_sending
+        ? (await hooks.reply_payload_sending({ kind, channel, sessionKey: key, runId, usageState: chatType ? { chatType } : undefined,
+          payload: { text: "Use --grace 40." } },
+          { channelId: channel, conversationId: t.replyConv || channel + ":" + conv, senderId: sender, runId })) ?? null
+        : null);
+    }
+    last = { context: built?.prependContext ?? null, sent: sent[sent.length - 1] ?? null };
+  }
+  out[name] = { ...last, calls: readFileSync(calls, "utf8") };
+}
+console.log(JSON.stringify(out));
+`
+	run := filepath.Join(home, "drive.mjs")
+	if err := os.WriteFile(run, []byte(driver), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(node, run)
+	cmd.Env = append(os.Environ(), "DEJA_CALLS="+filepath.Join(home, "calls"))
+	raw, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("driving the plugin: %v\n%s", err, raw)
+	}
+	var got map[string]struct {
+		Context string `json:"context"`
+		Calls   string `json:"calls"`
+		Sent    *struct {
+			Payload struct {
+				Text         string `json:"text"`
+				Presentation struct {
+					Blocks []struct {
+						Type string `json:"type"`
+						Text string `json:"text"`
+					} `json:"blocks"`
+				} `json:"presentation"`
+			} `json:"payload"`
+		} `json:"sent"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("driver said %s", raw)
+	}
+	for name, c := range got {
+		if c.Context != "RECALLED drain with --grace 40" {
+			t.Errorf("%s: the model was not given what --plain prints: %q", name, c.Context)
+		}
+	}
+	dm := got["dm"]
+	if dm.Sent == nil {
+		t.Fatalf("the reply in the owner's DM went out without the receipt:\n%s", raw)
+	}
+	blocks := dm.Sent.Payload.Presentation.Blocks
+	want := `_↺ you've been here: "zorbit drain" · Oct 7 · deja_`
+	if dm.Sent.Payload.Text != "Use --grace 40." || len(blocks) != 1 || blocks[0].Type != "context" || blocks[0].Text != want {
+		t.Errorf("want one context block %q under the reply:\n%s", want, raw)
+	}
+	if dm.Calls != "hook-prompt\n" {
+		t.Errorf("want one JSON hook-prompt spawn in the DM, got %q", dm.Calls)
+	}
+	for _, name := range []string{"group", "unnamedGroup", "tui", "off", "streaming", "legacyBlock"} {
+		if got[name].Sent != nil {
+			t.Errorf("%s: the reply was changed:\n%s", name, raw)
+		}
+		if got[name].Calls != "hook-prompt --plain\n" {
+			t.Errorf("%s: want --plain, got %q", name, got[name].Calls)
+		}
+	}
+	for _, name := range []string{"stranger", "block", "global"} {
+		if got[name].Sent != nil {
+			t.Errorf("%s: a reply that is not the owner's final direct reply took the receipt:\n%s", name, raw)
+		}
+	}
+	// A Slack DM's reply names its conversation "slack:channel:D…", the
+	// dispatch "D…"; and a second prompt hook in the run keeps the receipt.
+	for _, name := range []string{"slack", "twice"} {
+		c := got[name]
+		if c.Sent == nil || len(c.Sent.Payload.Presentation.Blocks) != 1 || c.Sent.Payload.Presentation.Blocks[0].Text != want {
+			t.Errorf("%s: the owner's DM reply went out without the receipt:\n%s", name, raw)
+		}
+	}
+}
+
+// The installer's plugin carries the receipt rules as a copy of
+// extensions/openclaw/lib.mjs's, so a fix to one that misses the other would
+// gate the receipt differently depending on how deja was installed.
+func TestOpenClawPluginSharesTheReceiptRules(t *testing.T) {
+	lib, err := os.ReadFile(filepath.Join("..", "..", "extensions", "openclaw", "lib.mjs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A windows checkout turns lib.mjs's line endings into CRLF.
+	lib = bytes.ReplaceAll(lib, []byte("\r\n"), []byte("\n"))
+	js := openclawPluginJS("/bin/deja")
+	for _, name := range []string{"splitHookReply", "deliversNotes", "ownerSender", "directSessionKey", "conversationOf",
+		"directTurn", "wholeReplies", "receiptAllowed", "replyTakes", "escapeMarkdown", "receiptLine", "withReceipt"} {
+		src := string(lib)
+		i := strings.Index(src, "export function "+name+"(")
+		if i < 0 {
+			t.Fatalf("lib.mjs has no %s", name)
+		}
+		end := strings.Index(src[i:], "\n}\n")
+		fn := src[i+len("export ") : i+end+2]
+		if !strings.Contains(js, fn) {
+			t.Errorf("the installer's plugin does not carry lib.mjs's %s as it is", name)
 		}
 	}
 }

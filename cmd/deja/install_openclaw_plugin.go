@@ -391,7 +391,13 @@ func openclawPluginManifest() string {
   },
   "configSchema": {
     "type": "object",
-    "additionalProperties": false
+    "additionalProperties": false,
+    "properties": {
+      "receipt": {
+        "type": "boolean",
+        "description": "In a 1:1 chat with the owner on a channel, add deja's one-line receipt under a reply answered from history. Default true."
+      }
+    }
   }
 }
 `
@@ -460,6 +466,151 @@ function toolLine(event, ctx) {
     return ask(["hook-tool-after", "--plain"], { tool_name: "bash", tool_input: { command: String(args.command || "") }, tool_response: text, session_id, cwd });
   }
   return "";
+}
+
+// deja's "you have been here" receipt rides under the final reply in a 1:1
+// chat with the owner on a channel (Telegram, Slack, Discord ...), never in a
+// group, the TUI or the Control UI, and the session-start notes never go to a
+// channel at all. The rules below are extensions/openclaw/lib.mjs's, copied as
+// they are; TestOpenClawPluginSharesTheReceiptRules keeps the two equal.
+function splitHookReply(stdout) {
+  const text = String(stdout || "").trim()
+  if (!text) return { context: "", notes: "" }
+  const lines = text.split("\n")
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim()
+    if (!line.startsWith("{")) continue
+    let reply
+    try {
+      reply = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (!reply || typeof reply !== "object" || Array.isArray(reply)) continue
+    if (!("hookSpecificOutput" in reply) && !("systemMessage" in reply)) continue
+    const out = reply.hookSpecificOutput
+    const context = out && typeof out.additionalContext === "string" ? out.additionalContext.trim() : ""
+    const before = lines.slice(0, i).join("\n").trim()
+    const after = lines.slice(i + 1).join("\n").trim()
+    const notes = typeof reply.systemMessage === "string" ? reply.systemMessage.trim() : ""
+    return { context: [before, context, after].filter(Boolean).join("\n"), notes }
+  }
+  return { context: text, notes: "" }
+}
+function deliversNotes(channel) {
+  const name = String(channel || "").trim().toLowerCase()
+  return name !== "" && name !== "webchat"
+}
+function ownerSender(config, channel, senderId) {
+  const ch = String(channel || "").trim().toLowerCase()
+  const id = String(senderId ?? "").trim()
+  if (!ch || !id) return false
+  const owners = config && config.commands && config.commands.ownerAllowFrom
+  if (Array.isArray(owners) && owners.length > 0) {
+    return owners.some((e) => String(e).trim().toLowerCase() === ch + ":" + id.toLowerCase())
+  }
+  const allow = config && config.channels && config.channels[ch] && config.channels[ch].allowFrom
+  if (!Array.isArray(allow)) return false
+  const entries = allow.map((e) => String(e).trim()).filter(Boolean)
+  if (entries.length !== 1 || entries[0] === "*") return false
+  return entries[0] === id || entries[0].toLowerCase() === ch + ":" + id.toLowerCase()
+}
+function directSessionKey(key) {
+  const parts = String(key || "").trim().toLowerCase().split(":")
+  if (!parts[0]) return false
+  return !parts.some((p) => p === "group" || p === "channel" || p === "thread" || p === "topic")
+}
+function conversationOf(id, channel) {
+  let s = String(id ?? "").trim().toLowerCase()
+  const own = String(channel || "").trim().toLowerCase() + ":"
+  if (s.startsWith(own)) s = s.slice(own.length)
+  for (const prefix of ["channel:", "chat:", "user:"]) {
+    if (s.startsWith(prefix)) return s.slice(prefix.length)
+  }
+  return s
+}
+function directTurn(event, ctx) {
+  const e = event || {}
+  const c = ctx || {}
+  const key = e.sessionKey || c.sessionKey || ""
+  const channel = String(e.channel || c.channelId || "").trim().toLowerCase()
+  const chatType = e.chatType ?? c.chatType
+  const conversation = conversationOf(c.conversationId ?? e.conversationId, channel)
+  const direct =
+    e.isGroup === false &&
+    directSessionKey(key) &&
+    (chatType === undefined || chatType === "direct") &&
+    channel !== "" &&
+    conversation !== ""
+  return { key, direct, channel, conversation, sender: String(e.senderId ?? c.senderId ?? "").trim() }
+}
+function wholeReplies(config, channel) {
+  const ch = String(channel || "").trim().toLowerCase()
+  const section = config && config.channels && config.channels[ch]
+  if (!ch || !section) return false
+  const off = (s) => s === "off" || s === false || (s && typeof s === "object" && s.mode === "off" && !(s.block && s.block.enabled === true))
+  // blockStreaming: true is the older spelling of streaming.block.enabled.
+  if (!off(section.streaming) || section.blockStreaming === true) return false
+  const accounts = section.accounts && typeof section.accounts === "object" ? Object.values(section.accounts) : []
+  if (accounts.some((a) => a && ((a.streaming !== undefined && !off(a.streaming)) || a.blockStreaming === true))) return false
+  const defaults = config.agents && config.agents.defaults
+  return !(defaults && defaults.blockStreamingDefault === "on")
+}
+function receiptAllowed(turn, ctx, channel, config) {
+  const c = ctx || {}
+  if (!turn || !turn.direct) return false
+  if (!deliversNotes(channel) || turn.channel !== String(channel).trim().toLowerCase()) return false
+  if (!c.sessionKey || turn.key !== c.sessionKey || !directSessionKey(c.sessionKey)) return false
+  if (c.chatType !== undefined && c.chatType !== "direct") return false
+  if (!c.runId || !turn.sender || String(c.senderId ?? "").trim() !== turn.sender) return false
+  if (!wholeReplies(config, channel)) return false
+  return ownerSender(config, channel, turn.sender)
+}
+function replyTakes(held, event, ctx) {
+  const e = event || {}
+  const c = ctx || {}
+  if (!held || e.kind !== "final") return false
+  const channel = String(e.channel || c.channelId || "").trim().toLowerCase()
+  if (channel !== held.channel) return false
+  if (!held.runId || (e.runId || c.runId) !== held.runId) return false
+  if (conversationOf(c.conversationId, channel) !== held.conversation) return false
+  if (c.senderId !== undefined && String(c.senderId).trim() !== held.sender) return false
+  // The delivery's own word that it is a 1:1 chat, required: a session key
+  // with no group word in it (session.scope "global") says nothing.
+  if (!e.usageState || e.usageState.chatType !== "direct") return false
+  const p = e.payload || {}
+  if (p.audioAsVoice === true) return false
+  return typeof p.text === "string" && p.text.trim() !== ""
+}
+function escapeMarkdown(text) {
+  return String(text).replace(/[\\\x60*_~|\[\]]/g, "\\$&")
+}
+function receiptLine(text) {
+  const shape = /^deja-vu\s+—\s+(you have been here|this was done on another machine):\s+("(?:[^"\\]|\\.)*")\s+\((.+)\)$/
+  for (const raw of String(text || "").split("\n")) {
+    const m = shape.exec(raw.trim())
+    if (!m) continue
+    let topic = m[2].slice(1, -1)
+    try {
+      topic = JSON.parse(m[2])
+    } catch {}
+    const when = m[3].split(/\s+·\s+via:?\s+/)[0].trim()
+    const who = m[1] === "you have been here" ? "you've been here" : "done on another machine"
+    return "↺ " + who + ': "' + escapeMarkdown(topic) + '"' + (when ? " · " + escapeMarkdown(when) : "") + " · deja"
+  }
+  return ""
+}
+function withReceipt(payload, line) {
+  if (!payload || !line) return payload
+  const presentation = payload.presentation && typeof payload.presentation === "object" ? payload.presentation : {}
+  const blocks = Array.isArray(presentation.blocks) ? presentation.blocks : []
+  return { ...payload, presentation: { ...presentation, blocks: [...blocks, { type: "context", text: "_" + line + "_" }] } }
+}
+
+// A cron or heartbeat run has no person waiting on its reply.
+function turnChannel(ctx) {
+  if (ctx?.trigger && ctx.trigger !== "user") return "";
+  return ctx?.channel || ctx?.messageProvider || "";
 }
 
 // The status page behind deja's Control UI tab: deja's status line, refreshed
@@ -540,6 +691,24 @@ export default {
         deja_once: true,
       });
     };
+    // By default every DM shares agent:main:main, so a receipt is tied to the
+    // run, the conversation and the sender it was asked for, and every new
+    // message or prompt in the session drops whatever an earlier turn left.
+    const showReceipt = api.pluginConfig?.receipt !== false;
+    const turns = new Map();
+    const board = new Map();
+    const keep = (map, key, value) => {
+      map.delete(key);
+      map.set(key, value);
+      while (map.size > 256) map.delete(map.keys().next().value);
+    };
+    // before_dispatch is the hook told whether the message came in a group.
+    api.on("before_dispatch", async (event, ctx) => {
+      const turn = directTurn(event, ctx);
+      if (!turn.key) return;
+      board.delete(turn.key);
+      keep(turns, turn.key, turn);
+    });
     let bootstrap = false;
     // A plugin hook is wired only while hooks.internal.enabled is not false.
     if (typeof api.registerHook === "function" && api.config?.hooks?.internal?.enabled !== false) {
@@ -580,12 +749,27 @@ export default {
         // session id. A payload without one turns that off: measured on a real
         // store, half of all injections were then a word-for-word repeat. The
         // event is {prompt, messages}; the session is on ctx (#4581).
+        const key = ctx?.sessionKey || "";
+        // A second prompt hook in the same run keeps the receipt deja already
+        // spent on it; one from any other run drops what was left.
+        if (key && board.get(key)?.runId !== ctx?.runId) board.delete(key);
         const at = where(ctx);
-        const recall = ask(["hook-prompt", "--plain"], {
-          prompt,
-          session_id: at.id,
-          cwd: at.cwd,
-        });
+        const channel = turnChannel(ctx);
+        const turn = key ? turns.get(key) : undefined;
+        if (key) turns.delete(key);
+        const payload = { prompt, session_id: at.id, cwd: at.cwd };
+        // One spawn either way: the JSON reply where the receipt can be shown
+        // (its context for the model, the receipt kept for the reply), --plain
+        // anywhere else, which leaves the receipt unspent.
+        let recall;
+        if (showReceipt && receiptAllowed(turn, ctx, channel, api.config)) {
+          const reply = splitHookReply(ask(["hook-prompt"], payload));
+          const line = receiptLine(reply.notes);
+          if (line) keep(board, key, { ...turn, runId: ctx.runId, line });
+          recall = reply.context;
+        } else {
+          recall = ask(["hook-prompt", "--plain"], payload);
+        }
         // Silence is the common case — the hook speaks only when the user's
         // own history answers what they just asked.
         if (!recall) return;
@@ -593,6 +777,19 @@ export default {
       },
       { timeoutMs: 15000 },
     );
+    // The final reply of the same run takes its receipt, as a context block
+    // under the answer. The transcript the model reads is written before this.
+    if (showReceipt) {
+      api.on("reply_payload_sending", async (event, ctx) => {
+        const key = event?.sessionKey || ctx?.sessionKey || "";
+        const held = key && board.get(key);
+        if (!held || event?.kind !== "final") return;
+        // The final reply settles it either way: shown here or dropped.
+        board.delete(key);
+        if (!replyTakes(held, event, ctx)) return;
+        return { payload: withReceipt(event.payload, held.line) };
+      });
+    }
     // Compaction throws away the blocks this session was shown while the list
     // that stops them repeating outlives it, so without this the memory the
     // session just lost is the memory recall refuses to send again. The event
