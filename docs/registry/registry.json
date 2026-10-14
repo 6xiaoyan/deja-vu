@@ -1230,7 +1230,8 @@
       ],
       "format_kind": "jsonl",
       "fixture_paths": [
-        "fixtures/registry/kimi/sessions/wd_demo_0123456789ab/session_fixture01/agents/main/wire.jsonl"
+        "fixtures/registry/kimi/sessions/wd_demo_0123456789ab/session_fixture01/agents/main/wire.jsonl",
+        "fixtures/registry/kimi/sessions/wd_demo_0123456789ab/session_changes01/agents/main/wire.jsonl"
       ],
       "parser_source": "internal/sources/kimi.go",
       "last_verified": "2026-07-28",

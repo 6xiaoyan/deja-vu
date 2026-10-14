@@ -5,7 +5,7 @@
 - **Read override**: `DEJA_KIMI_ROOT` (takes precedence over `KIMI_CODE_HOME` for reads)
 - **Format**: append-only JSONL wire protocol (observed `protocol_version` 1.1–1.4)
 
-Tool calls are `tool.call` events with `name` and `args`: `path` for the file tools, `old_string`/`new_string` on `Edit`, and the whole file as `content` on `Write`, which is the only record a created file's lines were ever in a session.
+Tool calls are `tool.call` events with `name` and `args`: `path` for the file tools, `old_string`/`new_string` on `Edit`, and the whole file as `content` on `Write`, which is the only record a created file's lines were ever in a session. `fixtures/registry/kimi/sessions/wd_demo_0123456789ab/session_changes01` pins both shapes, read back as `## what it changed` by the generic reader.
 
 `state.json` next to each session supplies title, workDir (project) and
 timestamps, and a change to it alone re-reads the session (#4446). User turns arrive as `context.append_message`; streamed assistant

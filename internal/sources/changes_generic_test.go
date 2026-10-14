@@ -8,6 +8,26 @@ import (
 	"github.com/vshulcz/deja-vu/internal/model"
 )
 
+// Kimi Code's Edit and Write calls, read through the Kimi loader and the
+// generic reader. Kimi's wire.jsonl carries no cwd, so paths are shown
+// relative to the common directory of the changed files (here both sit in
+// the same one).
+func TestChangesReadsKimiEditAndWriteCalls(t *testing.T) {
+	root := fixtureRoot(t, "kimi", "DEJA_KIMI_ROOT")
+	p := filepath.Join(root, "sessions", "wd_demo_0123456789ab", "session_changes01", "agents", "main", "wire.jsonl")
+	ss, err := ParseKimiFile(p)
+	if err != nil || len(ss) != 1 {
+		t.Fatalf("ParseKimiFile: %v, %d sessions", err, len(ss))
+	}
+	var got []string
+	for _, c := range Changes(ss[0]) {
+		got = append(got, c.Path+"|"+c.Old+"|"+c.New)
+	}
+	if want := "pool.go|MaxConns: 10|MaxConns: 40 pool_test.go||package demo"; strings.Join(got, " ") != want {
+		t.Fatalf("got  %q\nwant %q", strings.Join(got, " "), want)
+	}
+}
+
 // A harness with no edit reader of its own showed none of the code a session
 // changed. Copilot CLI's edit and create calls, read with the generic reader:
 // the edit and the new file come back relative to the session's directory,
