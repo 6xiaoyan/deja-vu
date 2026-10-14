@@ -1,6 +1,7 @@
 package sources
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -33,6 +34,22 @@ func TestChangesReadsAnotherHarnessesEditCalls(t *testing.T) {
 		got = append(got, c.Path+"|"+c.Old+"|"+c.New)
 	}
 	if want := "pool.go|MaxConns: 10|MaxConns: 40 pool_test.go||package gateway"; strings.Join(got, " ") != want {
+		t.Fatalf("got  %q\nwant %q", strings.Join(got, " "), want)
+	}
+}
+
+// Qwen Code writes tool calls as functionCall parts with name and args; its
+// edit and write_file calls come back through the generic reader.
+func TestChangesReadsQwenEditCalls(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DEJA_QWEN_ROOT", root)
+	p := filepath.Join(root, "projects", "-workspace-registry-demo", "chats", "registry-qwen-edit.jsonl")
+	copyFixture(t, "fixtures/registry/qwen/projects/-workspace-registry-demo/chats/registry-qwen-edit.jsonl", p)
+	var got []string
+	for _, c := range Changes(model.Session{Harness: "qwen", ID: "registry-qwen-edit", Path: p}) {
+		got = append(got, c.Path+"|"+c.Old+"|"+c.New)
+	}
+	if want := "pool.go|MaxConns: 10|MaxConns: 40 pool_test.go||package demo"; strings.Join(got, " ") != want {
 		t.Fatalf("got  %q\nwant %q", strings.Join(got, " "), want)
 	}
 }
