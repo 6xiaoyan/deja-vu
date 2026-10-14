@@ -142,6 +142,7 @@ https://vshulcz.github.io/deja-vu/zh/guide/where-sessions-are-stored.html
 https://vshulcz.github.io/deja-vu/zh/guide/session-files-on-disk.html
 https://vshulcz.github.io/deja-vu/zh/guide/privacy.html
 https://vshulcz.github.io/deja-vu/zh/guide/find-a-session.html
+https://vshulcz.github.io/deja-vu/zh/guide/resume-a-session.html
 https://vshulcz.github.io/deja-vu/zh/guide/recover-a-deleted-session.html
 https://vshulcz.github.io/deja-vu/zh/guide/lost-context.html
 https://vshulcz.github.io/deja-vu/registry/codebuddy.html
