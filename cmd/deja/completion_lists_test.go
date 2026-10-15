@@ -69,18 +69,22 @@ func TestCompletionSubstitutesEveryPlaceholder(t *testing.T) {
 // four more — tool-output, files, command and edit, the channels that record
 // which files a session touched, which commands it ran and which edits it made
 // (#1658). Substituted from knownRoles now, like the harnesses above.
+// PowerShell kept two copies of the old list after that, because this test
+// never looked at it. (#5017)
 func TestCompletionOffersEveryRole(t *testing.T) {
 	if len(knownRoles) < 5 {
 		t.Fatalf("knownRoles holds %d entries, so this test proves nothing", len(knownRoles))
 	}
 	want := strings.Join(knownRoles, " ")
-	for _, shell := range []string{"bash", "zsh", "fish"} {
+	for _, shell := range completionTestShells {
 		script := emittedCompletion(t, shell)
 		if !strings.Contains(script, want) {
 			t.Errorf("%s completion does not offer every role deja accepts", shell)
 		}
 		// And no copy of the old short list may survive alongside it.
-		if strings.Contains(script, "user assistant tool)") || strings.Contains(script, "'user assistant tool'") {
+		if strings.Contains(script, "user assistant tool)") ||
+			strings.Contains(script, "'user assistant tool'") ||
+			strings.Contains(script, "'user', 'assistant', 'tool'") {
 			t.Errorf("%s completion still holds a hand-written role list", shell)
 		}
 	}
