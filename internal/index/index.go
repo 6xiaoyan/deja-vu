@@ -1074,6 +1074,11 @@ type Manifest struct {
 	// holds rows for transcripts already gone, unmarked (0.21 had no Kept), and
 	// the first pass to find them must not date months of deletions to today.
 	KeptDated bool `json:"kept_dated,omitempty"`
+	// ReadZone names the time zone this machine's stores were last read in
+	// (zoneFingerprint). aider headers carry no zone and are read in the
+	// local one, so a pass in another zone rereads them (#5053). Empty on a
+	// store from before the field, which says nothing.
+	ReadZone string `json:"read_zone,omitempty"`
 }
 
 // HarnessIngest is one harness's ingestion health from its last indexing pass.
@@ -1136,6 +1141,7 @@ type manifestCore struct {
 	ToolFingerprint    string
 	Compactions        map[string]CompactionState
 	KeptDated          bool
+	ReadZone           string
 }
 
 type RedactionStats struct {
