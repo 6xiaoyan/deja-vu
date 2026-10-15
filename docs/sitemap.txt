@@ -110,6 +110,7 @@ https://vshulcz.github.io/deja-vu/guide/delete-opencode-session-history.html
 https://vshulcz.github.io/deja-vu/guide/delete-cline-task-history.html
 https://vshulcz.github.io/deja-vu/guide/delete-kilo-code-task-history.html
 https://vshulcz.github.io/deja-vu/guide/delete-kiro-session-history.html
+https://vshulcz.github.io/deja-vu/guide/delete-kimi-code-session-history.html
 https://vshulcz.github.io/deja-vu/guide/delete-amp-thread-history.html
 https://vshulcz.github.io/deja-vu/guide/delete-continue-session-history.html
 https://vshulcz.github.io/deja-vu/guide/credentials-in-transcripts.html
