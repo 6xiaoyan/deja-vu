@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory for Windsurf / Devin Desktop Cascade — deja-vu</title>
+<meta name="description" content="Cascade writes each conversation to an encrypted file under ~/.codeium/windsurf and starts new ones without them. deja reads the files and gives Cascade recall.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/guide/memory-for-windsurf.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Memory for Windsurf / Devin Desktop Cascade">
+<meta property="og:description" content="Cascade writes each conversation to an encrypted file under ~/.codeium/windsurf and starts new ones without them. deja reads the files and gives Cascade recall.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/guide/memory-for-windsurf.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="deja-vu — searchable local memory for coding agents">
+<meta name="twitter:title" content="Memory for Windsurf / Devin Desktop Cascade">
+<meta name="twitter:description" content="Cascade writes each conversation to an encrypted file under ~/.codeium/windsurf and starts new ones without them. deja reads the files and gives Cascade recall.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:image:alt" content="deja-vu — searchable local memory for coding agents">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Adding memory to Windsurf / Devin Desktop", "description": "Cascade writes each conversation to an encrypted file under ~/.codeium/windsurf and starts new ones without them. deja reads the files and gives Cascade recall.", "url": "https://vshulcz.github.io/deja-vu/guide/memory-for-windsurf.html", "inLanguage": "en", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/guide/memory-for-windsurf.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-10-14", "dateModified": "2026-10-14"}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "deja-vu", "item": "https://vshulcz.github.io/deja-vu/"}, {"@type": "ListItem", "position": 2, "name": "Memory for Windsurf / Devin Desktop", "item": "https://vshulcz.github.io/deja-vu/guide/memory-for-windsurf.html"}]}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Where does Windsurf store Cascade conversations?", "acceptedAnswer": {"@type": "Answer", "text": "One file per conversation at ~/.codeium/windsurf/cascade/<cascade-id>.pb on macOS and Linux, and C:\\Users\\<name>\\.codeium\\windsurf\\cascade on Windows. Devin Desktop uses the same directory. Each file is a protobuf sealed with AES-256-GCM, so grep and a text editor see only noise."}}, {"@type": "Question", "name": "Does Windsurf Cascade remember previous conversations?", "acceptedAnswer": {"@type": "Answer", "text": "Not on its own. A new Cascade conversation starts with your rules and what Cascade saved as memories; earlier conversations are not read back. With deja installed, Cascade can search them through an MCP tool, prompted by a rule, a skill and a /deja workflow."}}, {"@type": "Question", "name": "Why can't deja add recall to every Windsurf prompt?", "acceptedAnswer": {"@type": "Answer", "text": "Cascade hooks cannot pass text to the model: exit code 2 only blocks, and show_output is shown in the UI and is not offered for pre_user_prompt. So recall in Windsurf is pulled by the model through the MCP tool rather than pushed on each prompt."}}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">← deja-vu</a>
+<div class="grp">Guide</div>
+<a href="getting-started.html">Getting started</a>
+<a href="agents.html">Agents &amp; MCP</a>
+<a href="search.html">Search</a>
+<a href="commands.html">CLI reference</a>
+<a href="harnesses.html">Harnesses</a>
+<a href="privacy.html">Privacy</a>
+<details class="grpfold"><summary>Why agents forget <span class="n">11</span></summary>
+<a href="forgetting.html">Why agents forget</a>
+<a href="does-my-agent-remember.html">Does my agent remember?</a>
+<a href="lost-context.html">Lost context</a>
+<a href="context-window-full.html">Context window full</a>
+<a href="after-compaction.html">After compaction</a>
+<a href="repeated-mistakes.html">Repeated mistakes</a>
+<a href="switching-agents.html">Switching agents</a>
+<a href="parallel-sessions.html">Parallel sessions</a>
+<a href="rules-files.html">When CLAUDE.md grows</a>
+<a href="one-rules-file.html">One rules file</a>
+<a href="token-cost.html">What memory costs</a>
+</details>
+<details class="grpfold"><summary>Session history <span class="n">11</span></summary>
+<a href="where-sessions-are-stored.html">Where history lives</a>
+<a href="find-a-session.html">Finding a session</a>
+<a href="codex-history.html">Codex history</a>
+<a href="resume-a-session.html">Resuming a session</a>
+<a href="codex-resume-session.html">Codex resume</a>
+<a href="export-conversations.html">Exporting sessions</a>
+<a href="sync-across-machines.html">Across machines</a>
+<a href="auditing-agents.html">Auditing an agent</a>
+<a href="credentials-in-transcripts.html">Credentials in transcripts</a>
+<a href="recover-a-deleted-session.html">Recover a deleted session</a>
+<a href="no-conversation-found-claude-code.html">No conversation found</a>
+</details>
+<details class="grpfold"><summary>Deleting sessions <span class="n">16</span></summary>
+<a href="session-files-on-disk.html">Claude Code</a>
+<a href="delete-old-claude-sessions.html">Old sessions</a>
+<a href="delete-codex-sessions.html">Codex</a>
+<a href="delete-cursor-chat-history.html">Cursor</a>
+<a href="cursor-state-vscdb-too-large.html">Cursor state.vscdb too large</a>
+<a href="delete-copilot-chat-history.html">Copilot Chat</a>
+<a href="delete-gemini-cli-history.html">Gemini CLI</a>
+<a href="delete-opencode-session-history.html">opencode</a>
+<a href="delete-cline-task-history.html">Cline</a>
+<a href="delete-roo-task-history.html">Roo Code</a>
+<a href="delete-zed-thread-history.html">Zed</a>
+<a href="delete-kilo-code-task-history.html">Kilo Code</a>
+<a href="delete-amp-thread-history.html">Amp</a>
+<a href="delete-continue-session-history.html">Continue</a>
+<a href="delete-kiro-session-history.html">Kiro</a>
+<a href="delete-windsurf-cascade-history.html">Windsurf</a>
+</details>
+<details class="grpfold" open><summary>Per-agent guides <span class="n">36</span></summary>
+<a href="memory-for-aider.html">aider</a>
+<a href="memory-for-amp.html">Amp</a>
+<a href="memory-for-antigravity.html">Antigravity</a>
+<a href="memory-for-cherrystudio.html">Cherry Studio</a>
+<a href="memory-for-claude-code.html">Claude Code</a>
+<a href="memory-for-cline.html">Cline</a>
+<a href="memory-for-codewhale.html">CodeWhale</a>
+<a href="memory-for-codex.html">Codex</a>
+<a href="memory-for-commandcode.html">Command Code</a>
+<a href="memory-for-continue.html">Continue</a>
+<a href="memory-for-copilot.html">Copilot CLI</a>
+<a href="memory-for-crush.html">Crush</a>
+<a href="memory-for-cursor.html">Cursor</a>
+<a href="memory-for-dsh.html">dsh</a>
+<a href="memory-for-gjc.html">gajae-code</a>
+<a href="memory-for-gemini.html">Gemini CLI</a>
+<a href="memory-for-goose.html">Goose</a>
+<a href="memory-for-grok.html">Grok Build</a>
+<a href="memory-for-hermes.html">Hermes</a>
+<a href="memory-for-kilocode.html">Kilo Code</a>
+<a href="memory-for-kimchi.html">Kimchi Coding</a>
+<a href="memory-for-kimi.html">Kimi Code</a>
+<a href="memory-for-kiro.html">Kiro</a>
+<a href="memory-for-omp.html">omp</a>
+<a href="memory-for-openclaw.html">OpenClaw</a>
+<a href="memory-for-opencode.html">opencode</a>
+<a href="memory-for-pi.html">pi</a>
+<a href="memory-for-prime.html">prime-agent</a>
+<a href="memory-for-qwen.html">Qwen Code</a>
+<a href="memory-for-reasonix.html">Reasonix</a>
+<a href="memory-for-roo.html">Roo Code</a>
+<a href="memory-for-senpi.html">Senpi</a>
+<a href="memory-for-copilot-chat.html">VS Code Copilot Chat</a>
+<a href="memory-for-windsurf.html" aria-current="page">Windsurf</a>
+<a href="memory-for-zcode.html">ZCode</a>
+<a href="memory-for-zed.html">Zed</a>
+</details>
+<div class="grp">Evidence</div>
+<a href="benchmarks.html">Benchmarks</a>
+<a href="compare.html">Compare</a>
+<a href="claude-mem-alternative.html">claude-mem alternative</a>
+<a href="day-zero.html">Day zero</a>
+<div class="grp">Reference</div>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/SECURITY-MODEL.md">Security model</a>
+<a href="../registry/README.html">Format registry</a><a class="sidecat" href="../"><img src="../assets/icon-live.svg" width="46" height="46" alt=""><span>it remembers, so you do not have to</span></a></aside>
+<article>
+<h1>Adding memory to Windsurf / Devin Desktop</h1>
+<p class="pagelede">every Cascade conversation is on disk, sealed, and a new one starts without them<span class="mins" data-mins></span></p>
+
+<p>A new Cascade conversation starts with your rules and whatever Cascade saved as a memory. The conversations before it are not in context: the error you fixed last week, the approach you ruled out, the command that finally worked. They are still on disk, one file each, but Cascade does not read them back, and neither can you with <code>grep</code>.</p>
+
+<h2>Where the conversations are</h2>
+<pre>~/.codeium/windsurf/cascade/&lt;cascade-id&gt;.pb</pre>
+<p>That is macOS and Linux. On Windows the same tree is under <code>C:\Users\&lt;name&gt;\.codeium\windsurf</code>.</p>
+<p>Windsurf now ships as Devin Desktop, and the store did not move: Devin Desktop still writes under <code>.codeium/windsurf</code>, so one reader covers both names. Each file is a <code>CortexTrajectory</code> protobuf sealed with AES-256-GCM: a 12-byte nonce, the ciphertext, a 16-byte tag, and a key the language server carries as a constant. A text search over the directory finds nothing, because there is no text in it.</p>
+<p>deja opens the seal and checks the tag before it decodes anything. A file that fails is skipped whole and counted, so <code>deja doctor</code> says <code>windsurf 3 trajectories failed authentication</code> instead of quietly showing a shorter history. <code>DEJA_WINDSURF_ROOT</code> points deja at a different root.</p>
+
+<h2>Reading what is already there</h2>
+<pre>deja index
+deja last --harness windsurf
+deja --harness windsurf "the thing you half-remember"</pre>
+<p>That indexes Cascade along with every other agent on the machine, including conversations from before deja was installed. What goes in is your typed prompts and the planner's replies. Thinking, tool calls, file edits, terminal state and plans are left out. The session id is the <code>cascade_id</code>, which is also the file name; the title is the one you renamed the conversation to, or else its first prompt.</p>
+
+<h2>Getting recall into Cascade</h2>
+<pre>deja install windsurf</pre>
+<p>That writes four things, all under <code>~/.codeium/windsurf</code>:</p>
+<ul>
+<li><code>mcp_config.json</code> gets the deja server under <code>mcpServers</code>, next to whatever is there. This is the file Cascade reads. <code>devin-desktop --add-mcp</code> writes the Code OSS-level <code>User/mcp.json</code> instead, which Cascade does not read.</li>
+<li><code>memories/global_rules.md</code> gets deja's guidance block, between markers, so the rest of the file stays yours. Cascade keeps this file in context and caps it at 6,000 characters, your own rules included. If the block would push the file past that, install leaves it alone and says so, and <code>deja doctor</code> repeats it.</li>
+<li><code>skills/deja-history/SKILL.md</code> is a skill Cascade can pick up on its own when a request matches it, or that you call as <code>@deja-history</code>.</li>
+<li><code>global_workflows/deja.md</code> is a workflow you run as <code>/deja</code> followed by what you are looking for. Workflows get no argument substitution, so the file tells the model to take the words after <code>/deja</code> as the query.</li>
+</ul>
+<p><code>deja uninstall windsurf</code> takes them back out, leaving the rest of your rules file and MCP servers as they were.</p>
+
+<h2>Why recall is something Cascade asks for</h2>
+<p>In Claude Code or Codex, deja runs as a hook and puts relevant history in front of the model on every prompt, without the model asking. Cascade has hooks too, in <code>~/.codeium/windsurf/hooks.json</code>, but none of their output reaches the model. Exit code 2 only blocks the action, and <code>show_output</code> is shown in the UI and is not offered for <code>pre_user_prompt</code> (<a href="https://docs.devin.ai/desktop/cascade/hooks">Cascade hooks docs</a>). A hook could run deja; it could not hand the answer to Cascade. So <code>deja install windsurf</code> wires no hooks.</p>
+<p>Recall in Cascade is pull: the rule and the skill tell the model the tool is there and when to use it, and the model calls it. If it does not, ask it to check deja, or type <code>/deja</code> and the topic. The rule, the skill and the workflow follow Cascade's docs and have not yet been run against the app.</p>
+
+<h2>What does not work yet</h2>
+<p><b>No exact-session resume.</b> No Devin Desktop command takes a conversation id. <code>deja resume &lt;id&gt;</code> refuses with that reason, and <code>devin-desktop --sessions</code> opens the Sessions window, where you pick the conversation yourself. To carry a conversation into a new one, <code>deja handoff &lt;id&gt;</code> prints a packet of what it asked, decided and left open, to paste into a new Cascade chat.</p>
+<p><b>Only explicit conversations are read.</b> <code>implicit/</code> holds context trajectories, <code>brain/</code> holds plans and other state, and the newer ACP session store is separate again. deja reads none of them.</p>
+<p><b>Which reply field wins is unverified.</b> A turn can carry <code>response</code> and <code>modified_response</code>. deja reads <code>response</code> and falls back to the other when it is empty. The live file checked so far was refused by the service before the model answered, so a successful turn has not been seen. The <a href="../registry/windsurf.html">format registry entry</a> keeps that open rather than guessing.</p>
+
+<h2>The part that is not about this harness</h2>
+<p>The index covers every agent's transcripts on the machine — forty-two of them, <a href="where-sessions-are-stored.html">each in its own format</a> — so a fix found in Cascade answers a question asked in Claude Code, and the other way round. Nothing here writes memories, so there is nothing to hallucinate into your history; indexing and search are local, and credentials are stripped as the index is built (<a href="privacy.html">privacy</a>).</p>
+
+<p><a href="getting-started.html">Getting started</a> · <a href="delete-windsurf-cascade-history.html">Deleting Cascade history</a> · <a href="../registry/windsurf.html">The Windsurf session format</a></p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+</div>
+<script>
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

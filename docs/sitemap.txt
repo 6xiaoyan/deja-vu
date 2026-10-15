@@ -16,9 +16,9 @@ https://vshulcz.github.io/deja-vu/guide/one-rules-file.html
 https://vshulcz.github.io/deja-vu/guide/auditing-agents.html
 https://vshulcz.github.io/deja-vu/guide/find-a-session.html
 https://vshulcz.github.io/deja-vu/guide/codex-history.html
+https://vshulcz.github.io/deja-vu/guide/parallel-sessions.html
 https://vshulcz.github.io/deja-vu/guide/codex-resume-session.html
 https://vshulcz.github.io/deja-vu/guide/no-conversation-found-claude-code.html
-https://vshulcz.github.io/deja-vu/guide/parallel-sessions.html
 https://vshulcz.github.io/deja-vu/guide/memory-for-opencode.html
 https://vshulcz.github.io/deja-vu/guide/memory-for-dsh.html
 https://vshulcz.github.io/deja-vu/guide/memory-for-kimi.html
@@ -54,6 +54,7 @@ https://vshulcz.github.io/deja-vu/guide/memory-for-omp.html
 https://vshulcz.github.io/deja-vu/guide/memory-for-reasonix.html
 https://vshulcz.github.io/deja-vu/guide/memory-for-senpi.html
 https://vshulcz.github.io/deja-vu/guide/memory-for-zcode.html
+https://vshulcz.github.io/deja-vu/guide/memory-for-windsurf.html
 https://vshulcz.github.io/deja-vu/guide/lost-context.html
 https://vshulcz.github.io/deja-vu/guide/context-window-full.html
 https://vshulcz.github.io/deja-vu/guide/resume-a-session.html
@@ -135,6 +136,7 @@ https://vshulcz.github.io/deja-vu/registry/reasonix.html
 https://vshulcz.github.io/deja-vu/registry/trae.html
 https://vshulcz.github.io/deja-vu/guide/delete-roo-task-history.html
 https://vshulcz.github.io/deja-vu/guide/delete-zed-thread-history.html
+https://vshulcz.github.io/deja-vu/guide/delete-windsurf-cascade-history.html
 https://vshulcz.github.io/deja-vu/registry/jetbrains.html
 https://vshulcz.github.io/deja-vu/registry/junie.html
 https://vshulcz.github.io/deja-vu/registry/devin.html

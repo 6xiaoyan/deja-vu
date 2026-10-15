@@ -95,6 +95,13 @@
     <summary>opencode keeps every session in one SQLite database. What the tables hold, how to remove a session, and why deleting rows does not free the space.</summary>
   </entry>
   <entry>
+    <title>Delete Windsurf Cascade history — deja-vu</title>
+    <id>https://vshulcz.github.io/deja-vu/guide/delete-windsurf-cascade-history.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/delete-windsurf-cascade-history.html"></link>
+    <updated>2026-10-14T00:00:00Z</updated>
+    <summary>Windsurf and Devin Desktop keep one encrypted file per Cascade conversation. Where it is, how to delete one or all, and what to leave alone beside it.</summary>
+  </entry>
+  <entry>
     <title>Does Claude Code remember previous conversations? — deja-vu</title>
     <id>https://vshulcz.github.io/deja-vu/guide/does-my-agent-remember.html</id>
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/does-my-agent-remember.html"></link>
@@ -282,12 +289,5 @@
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/memory-for-kilocode.html"></link>
     <updated>2026-10-14T00:00:00Z</updated>
     <summary>Kilo Code keeps its tasks in the editor&#39;s global storage and its CLI history in a SQLite store. deja reads both, and adds the sessions from every other agent.</summary>
-  </entry>
-  <entry>
-    <title>Add memory to Kimchi Coding: past sessions — deja-vu</title>
-    <id>https://vshulcz.github.io/deja-vu/guide/memory-for-kimchi.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/memory-for-kimchi.html"></link>
-    <updated>2026-10-14T00:00:00Z</updated>
-    <summary>Kimchi keeps a session log per directory and reads none of it back. deja wires its MCP server, and its Claude-compatible extensions pick up the rest.</summary>
   </entry>
 </feed>
