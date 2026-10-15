@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A forgotten session stays forgotten after rebuilds even with `~/.config/deja` gone: the copy of the forget list kept inside the index, and hook text still waiting for its session, are carried into every new index instead of being deleted with the old one. A relative `XDG_CONFIG_HOME` is now ignored for the forget list and aider's files too, not only for the wiring record (#5052).
+- Compressed Codex and OpenClaw transcripts are read from memory, and deferred hooks pass the prompt through a pipe, so neither leaves plaintext in `$TMPDIR`. `deja install <typo>` writes nothing, and `deja rules sync` leaves aider alone unless `deja install aider` set it up (#5052).
 - Recalled text no longer reaches the model outside deja's untrusted-data frame. The MCP environment block sits inside it, the dsh, opencode, OpenClaw and Hermes agent tools and every skill's shell fallback run `deja --framed …`, and a planted `&#60;/deja-recall&#62;`, `</deja-recall/>`, `<\/deja-recall>` or fullwidth tag is defanged (#5051).
 - CodeWhale no longer leaves the frame open when a long message forces deja to cut what it adds, and a handoff quote can't be closed by `--- END QUOTED SESSION ---` in another case or with text after it (#5051).
 - A Codex rollout deja kept after it was deleted no longer gets its prompt a second time from `history.jsonl` on a rebuild (#5046).
