@@ -11,7 +11,8 @@ import (
 
 // promote writes a file with --to; share takes no flags and dropped them, so
 // `deja share <id> --to out.md` printed to the terminal, wrote nothing, and
-// said neither (#1002).
+// said neither (#1002). A flag in front was taken as the id and indexed
+// before the "no session matches" error (#5014).
 func TestShareRefusesFlagsItCannotHonour(t *testing.T) {
 	tmp := hermeticEnv(t)
 	store := filepath.Join(os.Getenv("DEJA_CLAUDE_ROOT"), "-proj")
@@ -37,6 +38,24 @@ func TestShareRefusesFlagsItCannotHonour(t *testing.T) {
 	}
 	if _, statErr := os.Stat(out); statErr == nil {
 		t.Errorf("share wrote a file after refusing")
+	}
+
+	// The flag leads: same refusal, still no file, and before any lookup.
+	_, err = captureRun(t, "share", "--to", out, "loc")
+	if err == nil {
+		t.Fatalf("share accepted a leading flag it does not implement, and wrote nothing")
+	}
+	if !strings.Contains(err.Error(), `unknown flag "--to"`) || !strings.Contains(err.Error(), "promote") {
+		t.Errorf("the refusal does not say what to use instead: %v", err)
+	}
+	if _, statErr := os.Stat(out); statErr == nil {
+		t.Errorf("share wrote a file after refusing a leading flag")
+	}
+
+	// A bare flag is not a session prefix (#5014).
+	_, err = captureRun(t, "share", "--json")
+	if err == nil || !strings.Contains(err.Error(), `unknown flag "--json"`) {
+		t.Errorf("share --json was searched as a session prefix: %v", err)
 	}
 
 	// The ordinary share is untouched.
