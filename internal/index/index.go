@@ -809,6 +809,11 @@ type FileState struct {
 	// index never read as fresh, and every search served stale while a
 	// background pass found nothing to do.
 	Kept bool `json:"kept,omitempty"`
+	// KeptAt is when an index pass first found the kept transcript gone, in
+	// Unix seconds. No agent records when it deleted a transcript, and the pass
+	// after it is the nearest deja can say; a row kept before this field
+	// existed has zero, and no window claims it.
+	KeptAt int64 `json:"kept_at,omitempty"`
 	// SafeSize is the offset just past the last complete line at index time.
 	// A session file caught mid-write ends in a torn line; parsing skips it,
 	// and the next append must resume from here or that message is lost.
@@ -1064,6 +1069,11 @@ type Manifest struct {
 	// it with the existing local index, while keeping it out of searchable
 	// transcript records.
 	Compactions map[string]CompactionState `json:"compactions,omitempty"`
+	// KeptDated says the transcripts this store lost were dated as they went:
+	// a pass of a build that stamps KeptAt wrote it. A store from before that
+	// holds rows for transcripts already gone, unmarked (0.21 had no Kept), and
+	// the first pass to find them must not date months of deletions to today.
+	KeptDated bool `json:"kept_dated,omitempty"`
 }
 
 // HarnessIngest is one harness's ingestion health from its last indexing pass.
@@ -1125,6 +1135,7 @@ type manifestCore struct {
 	ExcludeFingerprint string
 	ToolFingerprint    string
 	Compactions        map[string]CompactionState
+	KeptDated          bool
 }
 
 type RedactionStats struct {
