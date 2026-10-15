@@ -139,3 +139,30 @@ func TestNoShellCarriesTheCommandListTwice(t *testing.T) {
 		t.Errorf("'recap' appears %d times in the powershell script", n)
 	}
 }
+
+// No shell had a case for restore, so bash, zsh and PowerShell fell through to
+// the search flags — the first of which, --re, restore refuses — and fish
+// offered nothing at all.
+func TestCompletionHasARestoreBlock(t *testing.T) {
+	for _, tc := range []struct{ shell, start, end string }{
+		{"bash", "\n        restore)\n", "\n            ;;\n"},
+		{"zsh", "\n    restore)\n", "\n      ;;\n"},
+		{"fish", "__fish_seen_subcommand_from restore'", "\ncomplete -c deja -n '__fish_seen_subcommand_from secrets'"},
+		{"powershell", "\n            'restore' {\n", "\n            }\n"},
+	} {
+		script := emittedCompletion(t, tc.shell)
+		_, block, ok := strings.Cut(script, tc.start)
+		if !ok {
+			t.Errorf("%s completion has no restore block", tc.shell)
+			continue
+		}
+		block, _, _ = strings.Cut(block, tc.end)
+		// fish names a long flag "-l span" where the others spell "--span".
+		block = strings.ReplaceAll(block, "-l ", "--")
+		for _, flag := range []string{"--span", "--force", "--all", "out"} {
+			if !strings.Contains(block, flag) {
+				t.Errorf("%s restore block does not offer %s:\n%s", tc.shell, flag, block)
+			}
+		}
+	}
+}

@@ -138,6 +138,17 @@ _deja_completion() {
         resume)
             COMPREPLY=( $(compgen -W "--exec --write-back --app" -- "$cur") )
             ;;
+        restore)
+            if [[ "$prev" == "-o" || "$prev" == "--out" ]]; then
+                COMPREPLY=( $(compgen -f -- "$cur") )
+            elif [[ "$prev" == "--span" ]]; then
+                COMPREPLY=()
+            elif [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--span -o --out --force --all" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -f -- "$cur") )
+            fi
+            ;;
         secrets)
             if [[ "$prev" == "--limit" ]]; then
                 COMPREPLY=()
@@ -298,6 +309,9 @@ _deja() {
     resume)
       _arguments '--exec[launch the native harness]' '--write-back[write a deleted transcript back from the index]' '--app[open a Codex session in the ChatGPT app]' '1:session ID prefix:'
       ;;
+    restore)
+      _arguments '--span[which recorded span to restore]:number:' '(--out)-o[write the span to a file]:file:_files' '(-o)--out[write the span to a file]:file:_files' '--force[overwrite an existing -o file]' '--all[list every recorded span]' '1:path:_files'
+      ;;
     secrets)
       _arguments '--limit=[maximum findings]:count:' '--json[print JSON]' '--scrub[rewrite files to remove secrets]' '--dry-run[show what --scrub would change]'
       ;;
@@ -402,6 +416,11 @@ complete -c deja -n '__fish_seen_subcommand_from rules; and __fish_seen_subcomma
 complete -c deja -n '__fish_seen_subcommand_from resume' -l exec
 complete -c deja -n '__fish_seen_subcommand_from resume' -l write-back -d 'Write a deleted transcript back from the index'
 complete -c deja -n '__fish_seen_subcommand_from resume' -l app -d 'Open a Codex session in the ChatGPT app'
+complete -c deja -n '__fish_seen_subcommand_from restore' -l span -x -d 'Which recorded span to restore'
+complete -c deja -n '__fish_seen_subcommand_from restore' -s o -l out -r -F -d 'Write the span to a file'
+complete -c deja -n '__fish_seen_subcommand_from restore' -l force -d 'Overwrite an existing -o file'
+complete -c deja -n '__fish_seen_subcommand_from restore' -l all -d 'List every recorded span'
+complete -c deja -n '__fish_seen_subcommand_from restore' -F
 complete -c deja -n '__fish_seen_subcommand_from secrets' -l limit -r
 complete -c deja -n '__fish_seen_subcommand_from secrets' -l json
 complete -c deja -n '__fish_seen_subcommand_from secrets' -l scrub -d 'Rewrite files to remove secrets'
@@ -490,6 +509,10 @@ Register-ArgumentCompleter -Native -CommandName deja -ScriptBlock {
                 else { @() }
             }
             'resume' { @('--exec', '--write-back', '--app') }
+            'restore' {
+                if ($previous -in @('-o', '--out', '--span') -or -not $wordToComplete.StartsWith('-')) { @() }
+                else { @('--span', '-o', '--out', '--force', '--all') }
+            }
             'secrets' {
                 if ($previous -eq '--limit') { @() }
                 else { @('--limit', '--json', '--scrub', '--dry-run') }
