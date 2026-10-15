@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/vshulcz/deja-vu/internal/testenv"
 )
@@ -92,6 +93,10 @@ func TestMain(m *testing.M) {
 		"COLORFGBG":       "",
 		"DEJA_THEME":      "",
 		"DEJA_TUI":        "",
+		// Dates render in the reader's zone (#849) and fixtures write fixed
+		// instants, so seven tests went red at UTC-3, UTC-11 or UTC+14 (#5044).
+		// A test about zones sets time.Local itself.
+		"TZ": "UTC",
 	}
 	// The version lookup is the one thing in this package that talks to the
 	// internet, and only one test ever replaced it — so a full run asked
@@ -102,6 +107,7 @@ func TestMain(m *testing.M) {
 	doctorLookup = offlineLookup
 	// DEJA_NO_HOME_ARGS is how TestNoHomeHelperProcess reaches its own child.
 	testenv.Scrub(stores, "DEJA_NO_HOME_ARGS")
+	time.Local = time.UTC
 	code := m.Run()
 	_ = os.RemoveAll(root)
 	os.Exit(code)
