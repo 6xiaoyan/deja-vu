@@ -166,3 +166,53 @@ func TestCompletionHasARestoreBlock(t *testing.T) {
 		}
 	}
 }
+
+// zsh keeps its command list by hand, with a description beside each name, so
+// the joined-list check above cannot see it — and `deja recall` was missing
+// from it while bash and fish offered it.
+func TestZshOffersEveryCommand(t *testing.T) {
+	script := emittedCompletion(t, "zsh")
+	_, block, ok := strings.Cut(script, "\n  commands=(\n")
+	if !ok {
+		t.Fatal("zsh completion has no commands=( block")
+	}
+	block, _, _ = strings.Cut(block, "\n  )\n")
+	for _, name := range completionCommands() {
+		if !strings.Contains(block, "'"+name+":") {
+			t.Errorf("zsh completion does not offer `deja %s`", name)
+		}
+	}
+}
+
+// recall fell through to the search flags in bash, zsh and PowerShell, most of
+// which it refuses, and fish offered nothing for it.
+func TestCompletionHasARecallBlock(t *testing.T) {
+	for _, tc := range []struct{ shell, start, end string }{
+		{"bash", "\n        recall)\n", "\n            ;;\n"},
+		{"zsh", "\n    recall)\n", "\n      ;;\n"},
+		{"fish", "__fish_seen_subcommand_from recall;", "\ncomplete -c deja -n '__fish_seen_subcommand_from remember'"},
+		{"powershell", "\n            'recall' {\n", "\n            }\n"},
+	} {
+		script := emittedCompletion(t, tc.shell)
+		_, block, ok := strings.Cut(script, tc.start)
+		if !ok {
+			t.Errorf("%s completion has no recall block", tc.shell)
+			continue
+		}
+		block, _, _ = strings.Cut(block, tc.end)
+		block = strings.ReplaceAll(block, "-l ", "--")
+		for _, flag := range recallFlags {
+			if !strings.Contains(block, flag) {
+				t.Errorf("%s recall block does not offer %s:\n%s", tc.shell, flag, block)
+			}
+		}
+		for _, flag := range []string{"--re", "--role", "--json", "--since"} {
+			if strings.Contains(block, flag+" ") || strings.Contains(block, flag+"'") || strings.Contains(block, flag+"=") || strings.Contains(block, flag+"[") {
+				t.Errorf("%s recall block offers %s, which recall refuses:\n%s", tc.shell, flag, block)
+			}
+		}
+		if !strings.Contains(block, sources.HarnessNames()[0]) && !strings.Contains(block, "harnesses") {
+			t.Errorf("%s recall block does not complete --harness:\n%s", tc.shell, block)
+		}
+	}
+}
