@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `deja last` and `deja show` answer from the index while another deja holds its lock instead of waiting it out. A session too new for that index, like the one a session-start refresh is still reading, still waits for it. From @Sora-bluesky (#5058).
 - `deja forget` before the first `deja index` no longer blames an unmounted disk and writes nothing: it tombstones the matching sessions from the stores so the first build leaves them out, and says nothing was indexed yet. doctor no longer calls a `DEJA_INDEX_DIR` outside the home unmounted when a build would just create it (#5057).
 - In a partial clone, the session-start digest and `deja blame file:line` fetched missing blobs from origin; deja's git reads now set `GIT_NO_LAZY_FETCH=1`. The once-a-day release check no longer starts from `deja mcp` or a hook when the harness gives it a terminal. The query sent to an embedding endpoint is redacted like the index, and `deja recall` sends it once instead of twice (#5053).
 - Dates read the same on every machine. A synced decision shows the day it was rejected or replaced, in UTC, as on the machine that filed it, not the day of the session it judged in the sender's zone. aider headers are still read in your zone, and after a zone change deja reads them again, so a kept index matches a rebuild. `deja view`, the "earlier attempt" line, the stats page, the plan hook and doctor print in your zone (#5053).

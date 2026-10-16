@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode"
@@ -802,7 +804,7 @@ func cmdShow(dir string, rest []string, sourceInstance string) error {
 		// not write while `show <prefix>` re-read the sources first (#3617).
 		// A store that cannot be rebuilt — read-only, no space — falls through
 		// to the loader, which refuses and says why.
-		_ = index.Ensure(dir, "", false, os.Stderr)
+		_ = ensureForCLIRead(dir)
 		// Exact identity first — that is what --harness is for. But the usage line documents an id *prefix*, and
 		// routing --harness straight to the exact lookup made every
 		// prefix+harness call fail: "deja show 019fa282 --harness codex" said
@@ -2784,8 +2786,8 @@ func findByPrefix(dir, p string) (model.Session, bool, error) {
 			return full, true, nil
 		}
 	}
-	if err := index.Ensure(dir, "", false, os.Stderr); err == nil {
-		if s, ok, err := index.FindByPrefix(dir, p); err == nil {
+	if err := ensureForCLIRead(dir); err == nil {
+		if s, ok, err := lookupUnlessNew(dir, func() (model.Session, bool, error) { return index.FindByPrefix(dir, p) }); err == nil {
 			if ok {
 				noteForgottenSource(s, p, true)
 			}
@@ -2804,8 +2806,8 @@ func findByPrefix(dir, p string) (model.Session, bool, error) {
 // across every harness and then refusing it said no session matches while one
 // in the named harness started with the prefix.
 func findByPrefixHarness(dir, p, harness string) (model.Session, bool, error) {
-	if err := index.Ensure(dir, "", false, os.Stderr); err == nil {
-		if s, ok, err := index.FindByPrefixIn(dir, p, harness); err == nil {
+	if err := ensureForCLIRead(dir); err == nil {
+		if s, ok, err := lookupUnlessNew(dir, func() (model.Session, bool, error) { return index.FindByPrefixIn(dir, p, harness) }); err == nil {
 			if ok {
 				noteForgottenSource(s, p, true)
 			}
@@ -2822,6 +2824,48 @@ func findByPrefixHarness(dir, p, harness string) (model.Session, bool, error) {
 	return s, ok, nil
 }
 
+// ensureForCLIRead brings the index up to date before `last` or `show` reads
+// it, unless another deja holds the index lock. A hook refresh or `deja index`
+// holds it for its whole pass, and a scheduled `deja last` sat at no CPU for
+// over an hour behind them while the snapshot on disk had the answer. The
+// holder may be a reader that updates nothing, so the refresh goes to the
+// detached warmup, as a search's does. The line goes out once: `show
+// --harness` comes through here twice when the exact id misses.
+func ensureForCLIRead(dir string) error {
+	busy, err := index.EnsureUnlessBusy(dir, os.Stderr)
+	answeredFromSnapshot.Store(busy)
+	if busy {
+		requestWarmup(dir)
+		saidReadingAsItWas.Do(func() {
+			fmt.Fprintln(os.Stderr, "deja: answering from the index as it was — refreshing in the background")
+		})
+	}
+	return err
+}
+
+var saidReadingAsItWas sync.Once
+
+// answeredFromSnapshot is whether the last ensureForCLIRead skipped the update
+// because another deja held the lock.
+var answeredFromSnapshot atomic.Bool
+
+// lookupUnlessNew runs an id lookup against the snapshot and, when it misses
+// while another deja holds the lock, waits for the index and looks again. A
+// lock held at session start is a hook refresh reading the session that just
+// began, so the id someone copied from it is the one the snapshot cannot have
+// yet: answering "no session matches" for it at once was worse than the wait
+// the snapshot read saves.
+func lookupUnlessNew(dir string, find func() (model.Session, bool, error)) (model.Session, bool, error) {
+	s, ok, err := find()
+	if err != nil || ok || !answeredFromSnapshot.Load() {
+		return s, ok, err
+	}
+	if index.Ensure(dir, "", false, os.Stderr) != nil {
+		return s, ok, err
+	}
+	return find()
+}
+
 func recent(dir string, n int) ([]model.Session, error) {
 	return recentMatching(dir, n, search.Options{})
 }
@@ -2834,7 +2878,7 @@ func recentMatching(dir string, n int, o search.Options) ([]model.Session, error
 // recentMatchingCounted is recentMatching with how many matched before the cut,
 // so the listing can say what it left out (#2638).
 func recentMatchingCounted(dir string, n int, o search.Options) ([]model.Session, int, error) {
-	if err := index.Ensure(dir, "", false, os.Stderr); err == nil {
+	if err := ensureForCLIRead(dir); err == nil {
 		if o.Role != "" {
 			// The role has to travel into the index query, not just the filter
 			// below: a scan with no role set drops file, command and edit

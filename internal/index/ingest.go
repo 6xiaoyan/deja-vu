@@ -282,6 +282,10 @@ func Ensure(dir string, harness string, force bool, progress io.Writer) error {
 		return err
 	}
 	defer unlock()
+	return ensureHeld(dir, harness, force, progress)
+}
+
+func ensureHeld(dir string, harness string, force bool, progress io.Writer) error {
 	sweepStaleTmp(dir)
 	// The manifest is read before the walk so unchanged files can carry
 	// their derived state forward instead of being re-read.
@@ -310,6 +314,36 @@ func Ensure(dir string, harness string, force bool, progress io.Writer) error {
 		return nil
 	}
 	return updateIndex(dir, harness, scope, want, force, progress)
+}
+
+// EnsureUnlessBusy is Ensure for a reader that can answer from the index on
+// disk, such as `deja last` and `deja show`. When another deja holds the lock
+// (a `deja index` or a hook refresh for its whole pass, or another reader) it
+// reports busy at once instead of waiting, and the caller reads the snapshot.
+// With the lock free it is Ensure(dir, "", false, progress). It still waits
+// when the snapshot is not one to answer from: no index yet, one below the
+// layout or redaction floor this build serves, or a record log shorter than
+// the manifest says. A lock file that cannot be opened is not a held lock, so
+// a read-only index fails the way Ensure fails it.
+func EnsureUnlessBusy(dir string, progress io.Writer) (bool, error) {
+	if dir == "" {
+		dir = DefaultDir()
+	}
+	unlock, ok, err := tryLockDir(dir)
+	if err != nil {
+		return false, err
+	}
+	if ok {
+		defer unlock()
+		return false, ensureHeld(dir, "", false, progress)
+	}
+	if f, err := os.OpenFile(dir+".lock", os.O_RDWR, 0); err == nil {
+		_ = f.Close()
+		if m, err := readManifestCached(dir); err == nil && !mustRebuildBeforeAnswering(m, version) && recordsReadable(dir, m) {
+			return true, nil
+		}
+	}
+	return false, Ensure(dir, "", false, progress)
 }
 
 func EnsureForSearch(dir string, o query.Options, force bool, progress io.Writer) error {
