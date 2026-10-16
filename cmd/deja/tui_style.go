@@ -133,7 +133,7 @@ func (p painter) putHL(x, y int, text string, terms []string, base tui.Style, ma
 			}
 		}
 		if termwidth.Columns(text) > max-x {
-			text = termwidth.Cut(text, max-x-1) + "…"
+			text = strings.TrimRight(termwidth.Cut(text, max-x-1), " ") + "…"
 		}
 	}
 	rs := []rune(text)
@@ -203,12 +203,21 @@ func highlightMask(rs []rune, terms []string) []bool {
 }
 
 // queryTerms is what the highlighter looks for: the words of the query,
-// without quotes or the one-letter noise.
+// without quotes or the one-letter noise. Each word once and at most 32 of
+// them: every card's headline, line and ASKED scans for each, and a pasted
+// log in the box would otherwise make one frame thousands of passes.
 func queryTerms(q string) []string {
 	var out []string
+	seen := map[string]bool{}
 	for _, f := range strings.Fields(strings.ReplaceAll(q, "\"", " ")) {
-		if len([]rune(f)) >= 2 {
-			out = append(out, f)
+		k := strings.ToLower(f)
+		if len([]rune(f)) < 2 || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, f)
+		if len(out) == 32 {
+			break
 		}
 	}
 	return out
@@ -228,7 +237,7 @@ func wrapLines(text string, width, n int) []string {
 		if termwidth.Columns(last) >= width {
 			last = termwidth.Cut(last, width-1)
 		}
-		lines[n-1] = last + "…"
+		lines[n-1] = strings.TrimRight(last, " ") + "…"
 	}
 	return lines
 }
