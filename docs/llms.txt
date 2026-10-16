@@ -32,6 +32,7 @@ Run `deja` with no arguments in a terminal and it opens a full-screen search ove
 - [Delete Gemini CLI chat history](https://vshulcz.github.io/deja-vu/guide/delete-gemini-cli-history.html): chats under ~/.gemini/tmp, mapping a project id back to a directory, and what the prompt log keeps
 - [Delete opencode session history](https://vshulcz.github.io/deja-vu/guide/delete-opencode-session-history.html): one SQLite database, what its tables hold, and why deleting rows does not free the space
 - [Delete VS Code Copilot Chat history](https://vshulcz.github.io/deja-vu/guide/delete-copilot-chat-history.html): where the conversations are kept and what goes with them
+- [Delete Copilot CLI session history](https://vshulcz.github.io/deja-vu/guide/delete-copilot-cli-session-history.html): one directory per session under session-state, found by the id in events.jsonl rather than the directory name
 - [Delete Kilo Code task history](https://vshulcz.github.io/deja-vu/guide/delete-kilo-code-task-history.html): task JSON under the extension's storage, and the CLI's separate SQLite store
 - [CLI reference](https://vshulcz.github.io/deja-vu/guide/commands.html): every command and flag
 - [Agents & MCP](https://vshulcz.github.io/deja-vu/guide/agents.html): the deja MCP tool and its modes, and what each harness supports

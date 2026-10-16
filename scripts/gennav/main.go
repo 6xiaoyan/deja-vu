@@ -74,6 +74,7 @@ var groups = []group{
 		{"delete-cursor-chat-history.html", "Cursor"},
 		{"cursor-state-vscdb-too-large.html", "Cursor state.vscdb too large"},
 		{"delete-copilot-chat-history.html", "Copilot Chat"},
+		{"delete-copilot-cli-session-history.html", "Copilot CLI"},
 		{"delete-gemini-cli-history.html", "Gemini CLI"},
 		{"delete-opencode-session-history.html", "opencode"},
 		{"delete-cline-task-history.html", "Cline"},
