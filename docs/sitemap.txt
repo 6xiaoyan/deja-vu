@@ -141,6 +141,7 @@ https://vshulcz.github.io/deja-vu/registry/trae.html
 https://vshulcz.github.io/deja-vu/guide/delete-roo-task-history.html
 https://vshulcz.github.io/deja-vu/guide/delete-zed-thread-history.html
 https://vshulcz.github.io/deja-vu/guide/delete-windsurf-cascade-history.html
+https://vshulcz.github.io/deja-vu/guide/delete-qwen-code-chat-history.html
 https://vshulcz.github.io/deja-vu/registry/jetbrains.html
 https://vshulcz.github.io/deja-vu/registry/junie.html
 https://vshulcz.github.io/deja-vu/registry/devin.html

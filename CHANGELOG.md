@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A guide on deleting Qwen Code chat history: the chat file, its sub-agent logs, and what `qwen -r` loses. From @beiryu (#4966).
 - Claude Code sessions whose transcript is gone come back as their prompts. `~/.claude/history.jsonl` keeps every typed prompt and paste with its session id after the cleanup deletes the transcript, so those sessions are searchable again, filed under the directory they ran in. Only the prompts: `deja show` says so, and `deja resume` refuses one. A session with its transcript on disk, or one deja kept after it was deleted, is left to the transcript. `DEJA_CLAUDE_HISTORY_FILE` moves the file (#5046).
 - The guide on deleting old Claude Code sessions in Chinese, with the same commands and numbers: 368 of 1,320 files are older than 30 days and hold 4% of the bytes, while the ten largest hold 86%. From @beiryu (#4970).
 - The Claude Code and Cursor memory guides in Chinese, with the same commands and numbers. From @Quartex246 (#5019, #5020).
