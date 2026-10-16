@@ -65,7 +65,9 @@ Run `deja` with no arguments in a terminal and it opens a full-screen search ove
 - [找回被删掉的会话](https://vshulcz.github.io/deja-vu/zh/guide/recover-a-deleted-session.html)：claude --resume 里找不到那次会话时，四种原因里有三种不是删除，真正还能找回的是什么
 - [找回解决问题的那次会话](https://vshulcz.github.io/deja-vu/zh/guide/find-a-session.html)：按记得的词在所有智能体里同时搜历史，然后继续那次对话
 - [怎么删掉 Claude Code 的旧会话](https://vshulcz.github.io/deja-vu/zh/guide/delete-old-claude-sessions.html)：find 命令或 cleanupPeriodDays 按时间删，以及为什么按时间删腾出的磁盘远比按大小删少
+- [给 Claude Code 加记忆](https://vshulcz.github.io/deja-vu/zh/guide/memory-for-claude-code.html)：MCP 服务器、钩子，还有插件市场
 - [给 Codex CLI 加记忆](https://vshulcz.github.io/deja-vu/zh/guide/memory-for-codex.html)：MCP 服务器、需要你批准的钩子，以及插件市场
+- [给 Cursor 加记忆](https://vshulcz.github.io/deja-vu/zh/guide/memory-for-cursor.html)：它的聊天记录在 SQLite 里，而旁边的那个终端智能体是同一段历史
 - [接着昨天的会话继续](https://vshulcz.github.io/deja-vu/zh/guide/resume-a-session.html)：先在所有智能体里找到会话，再在它所属的那个里重新打开，或者只取摘要
 - [隐私](https://vshulcz.github.io/deja-vu/zh/guide/privacy.html)：索引什么、脱敏什么、什么永远不出这台机器，以及怎么控制留下什么
 

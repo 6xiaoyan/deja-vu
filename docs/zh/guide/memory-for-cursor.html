@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-Hans" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>给 Cursor 加记忆：召回这台机器上所有智能体的历史会话 — deja-vu</title>
+<meta name="description" content="如何让 Cursor 查到这台机器上每个编程智能体的会话：它的 SQLite 聊天记录存在哪，以及 deja install cursor-auto 写入了什么。">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/zh/guide/memory-for-cursor.html">
+<link rel="alternate" hreflang="zh-Hans" href="https://vshulcz.github.io/deja-vu/zh/guide/memory-for-cursor.html">
+<link rel="alternate" hreflang="en" href="https://vshulcz.github.io/deja-vu/guide/memory-for-cursor.html">
+<link rel="alternate" hreflang="x-default" href="https://vshulcz.github.io/deja-vu/guide/memory-for-cursor.html">
+<meta property="og:type" content="article">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:title" content="给 Cursor 加记忆：召回这台机器上所有智能体的历史会话">
+<meta property="og:description" content="如何让 Cursor 查到这台机器上每个编程智能体的会话：它的 SQLite 聊天记录存在哪，以及 deja install cursor-auto 写入了什么。">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/zh/guide/memory-for-cursor.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="deja-vu — 给编程智能体的可搜索本地记忆">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<meta name="twitter:title" content="给 Cursor 加记忆：召回这台机器上所有智能体的历史会话">
+<meta name="twitter:description" content="如何让 Cursor 查到这台机器上每个编程智能体的会话：它的 SQLite 聊天记录存在哪，以及 deja install cursor-auto 写入了什么。">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../../assets/icon.svg">
+<link rel="stylesheet" href="../../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<link rel="apple-touch-icon" href="../../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "给 Cursor 加记忆", "description": "如何让 Cursor 查到这台机器上每个编程智能体的会话：它的 SQLite 聊天记录存在哪，以及 deja install cursor-auto 写入了什么。", "url": "https://vshulcz.github.io/deja-vu/zh/guide/memory-for-cursor.html", "inLanguage": "zh-Hans", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/zh/guide/memory-for-cursor.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-10-15", "dateModified": "2026-10-15"}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "deja-vu", "item": "https://vshulcz.github.io/deja-vu/"}, {"@type": "ListItem", "position": 2, "name": "给 Cursor 加记忆", "item": "https://vshulcz.github.io/deja-vu/zh/guide/memory-for-cursor.html"}]}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "怎么给 Cursor 加记忆？", "acceptedAnswer": {"@type": "Answer", "text": "执行 deja install cursor-auto，它会把 deja MCP 服务器写进 ~/.cursor/mcp.json，同时写入把召回送进会话的钩子。"}}, {"@type": "Question", "name": "Cursor 的聊天记录存在哪里？", "acceptedAnswer": {"@type": "Answer", "text": "不是 JSONL 而是 SQLite：macOS 上是 ~/Library/Application Support/Cursor/User 下的 state.vscdb，Linux 上是 ~/.config/Cursor/User 下的同名文件。"}}, {"@type": "Question", "name": "在终端智能体里做过的事，Cursor 也能召回吗？", "acceptedAnswer": {"@type": "Answer", "text": "能。deja 给这台机器上每个智能体的会话记录建索引，所以不论当时是哪个工具，你在 Cursor 里提的问题都会由当时真正解决它的那次会话来回答。"}}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../../"><img src="../../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../../">首页</a><a class="lnk" href="getting-started.html">文档</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../../">← deja-vu</a><div class="grp">中文指南</div>
+<a href="getting-started.html">快速开始</a>
+<a href="does-my-agent-remember.html">智能体记得之前的对话吗</a>
+<a href="forgetting.html">为什么会忘事</a>
+<a href="where-sessions-are-stored.html">历史文件在哪里</a>
+<a href="session-files-on-disk.html">会话文件怎么删</a>
+<a href="privacy.html">隐私</a>
+<a href="memory-for-claude-code.html">给 Claude Code 加记忆</a>
+<a href="memory-for-codex.html">给 Codex CLI 加记忆</a>
+<a href="memory-for-cursor.html" aria-current="page">给 Cursor 加记忆</a>
+<a href="memory-for-dsh.html">给 DeepSeek Harness 加记忆</a>
+<a href="memory-for-kimi.html">给 Kimi Code 加记忆</a>
+<a href="memory-for-qwen.html">给 Qwen Code 加记忆</a>
+<div class="grp">English</div>
+<a href="../../guide/find-a-session.html">Finding a session</a>
+<a href="../../guide/session-files-on-disk.html">Session files on disk</a>
+<a href="../../guide/where-sessions-are-stored.html">Where history lives</a>
+<a href="../../guide/delete-copilot-chat-history.html">Delete Copilot Chat history</a>
+<a href="../../guide/commands.html">CLI reference</a>
+<div class="grp">Reference</div>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/readme/README.zh.md">中文 README</a>
+<a href="../../registry/README.html">Format registry</a><a class="sidecat" href="../../"><img src="../../assets/icon-live.svg" width="46" height="46" alt=""><span>它记得，你就不必记</span></a></aside>
+<article>
+
+<h1>给 Cursor 加记忆</h1>
+<p class="pagelede">它的聊天记录在 SQLite 里，而旁边的那个终端智能体是同一段历史<span class="mins" data-mins></span></p>
+
+<p>Cursor 会记下你的每次对话，然后把你下一次打开的对话开成空的。你上周弄明白的东西仍然留在磁盘上——连同你在旁边打开的那个终端智能体里所做的工作一起。</p>
+
+<h2>Memories，Rules，以及两边都没覆盖到的部分</h2>
+<p>Cursor 自己给出的答案是两个功能。首先是 Rules（规则）——包括仓库里的 <code>.cursor/rules/*.mdc</code>，以及更早的 <code>.cursorrules</code>。这些都是你写下来、Cursor 每次都会读取的指令。然后是 Memories（记忆）——它由编辑器从你的聊天记录中提炼出一些短事实，并按项目保存。它更接近大家真正想要的东西，但本质上仍是模型写的一份摘要，而不是那次会话本身：它留下的是模型自己挑中的那句话，而不是你运行过的命令，或你粘贴进去的报错。</p>
+<p>两者都被限制在 Cursor 里，也限制在你当前所在的项目里。它们都回答不了大家真正想问的问题——这件事我之前是怎么处理的——尤其当那个「之前」可能是一个月前、在另一个仓库、或者在当时开在编辑器旁边的那个终端智能体里。而那一部分其实已经在磁盘上了：在聊天记录里，也在其他智能体的会话记录里。</p>
+
+<h2>Cursor 已经有的部分</h2>
+<p>编辑器把聊天存在 SQLite 里而不是 JSONL：macOS 上是 <code>~/Library/Application Support/Cursor/User</code> 下的 <code>state.vscdb</code>，Linux 上是 <code>~/.config/Cursor/User</code> 下的同名文件，内容分散在 <code>globalStorage/</code> 和每个工作区各自的一个数据库里。没有任何东西会读它。<a href="../../registry/cursor.html">Cursor 的聊天记录是怎么读的</a>里有表结构，以及跟着它跨版本一路读下来花了多少功夫。</p>
+
+<h2>接上召回</h2>
+<pre>deja install cursor-auto</pre>
+<p>这会把 deja MCP 服务器写进 <code>~/.cursor/mcp.json</code>，同时写入把召回送进会话的钩子。只装服务器用 <code>deja install cursor</code>。</p>
+<p>它需要那个二进制文件，因为 MCP 条目是按名字调用它的：</p>
+<pre>brew install deja-vu
+# 或者
+curl -fsSL https://raw.githubusercontent.com/vshulcz/deja-vu/main/install.sh | sh</pre>
+
+<h2>编辑器和终端是同一段历史</h2>
+<p>机器上通常不止 Cursor 一个智能体——同一个仓库里还开着一个终端智能体，而这两个永远看不见对方做过什么。把两边都建索引才是重点：在 Cursor 里问的问题，会由当时真正解决它的那次会话来回答，不管那是哪个工具。<a href="../../guide/switching-agents.html">换用别的智能体</a>是这套说法的完整版。</p>
+
+<h2>和这个 harness 无关的部分</h2>
+<p>索引覆盖这台机器上每个智能体的转录——今天是四十二个，<a href="where-sessions-are-stored.html">各有各的格式</a>——所以在一个工具里找到的修法，能回答在另一个工具里提的问题，包括这一切装上来之前的会话。这就是选择索引、而不是选择边用边记的原因。</p>
+<p>这里没有任何东西在写记忆，所以也就没有什么能凭空编进你的历史里；建索引和检索都在本地，凭据在建索引时就被脱敏（<a href="../../guide/privacy.html">隐私说明</a>）。每次提问注入上限 1536 字节，每次工具调用约 4 KB——<a href="../../guide/token-cost.html">记忆要花多少 token</a> 里有实测对比。</p>
+
+<p><a href="getting-started.html">快速开始</a> · <a href="../../registry/cursor.html">Cursor 的聊天记录是怎么读的</a> · <a href="../../guide/parallel-sessions.html">并行会话</a></p>
+</article>
+</div>
+<footer>deja-vu 采用 MIT 许可，在你的机器上运行。<a href="https://github.com/vshulcz/deja-vu">GitHub 源码</a> · <a href="../../">首页</a></footer>
+</div>
+<script src="../../assets/guide.js" defer></script>
+</body>
+</html>
