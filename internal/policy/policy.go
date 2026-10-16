@@ -26,10 +26,11 @@ const (
 // Policy maps activation → origin rules. A missing activation allows every
 // origin. Origin keys: "local", "imported" (anything that arrived by sync) and
 // "imported:<group>", where group is the first path component of the project
-// the session had on the machine it came from — a sync batch carries no machine
-// identity, so this is a project grouping and not a peer name, which is how it
-// was described until a rule written for a machine turned out to be accepted,
-// displayed and never matched (#955). Most specific wins.
+// the session had on the machine it came from. A sync record names its machine
+// only as the sender calls itself, which nothing verifies, so this is a project
+// grouping and not a peer name — which is how it was described until a rule
+// written for a machine turned out to be accepted, displayed and never matched
+// (#955). Most specific wins.
 type Policy struct {
 	Activations map[string]map[string]bool `json:"activations,omitempty"`
 	// Ignore lists the directories deja does not recall from: an agent

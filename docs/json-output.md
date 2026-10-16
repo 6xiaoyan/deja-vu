@@ -755,7 +755,9 @@ kind:
 
 The value is never in this document, and cannot be: redaction runs at ingest, so
 every finding was read back out of a `[redacted:<kind>]` marker rather than out
-of a credential. `count` is how many turns of that session held that kind.
+of a credential. `count` is how many markers of that kind the session's indexed
+records hold, not how many turns: a turn that pasted the same key twice counts
+two, and so does a key that appears in a turn and again in a command's output.
 
 `findings` holds only the rules that name a provider or a protocol shape —
 provider keys, `private-key`, `jwt`, `bearer-token`, `cookie`,
@@ -1096,7 +1098,8 @@ What the ingest-time redaction masked in this index:
 {
   "total": 412,
   "by_harness": {
-    "claude": {"bearer-token": 3, "entropy": 290}
+    "claude": {"bearer-token": 3, "entropy": 290},
+    "codex": {"github-token": 1, "entropy": 118}
   },
   "sidecar_size": 12345,
   "tombstones": 2

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/vshulcz/deja-vu/internal/index"
@@ -260,7 +261,7 @@ var helpEntries = []helpEntry{
 	{name: "help",
 		usage:    []string{"deja help [command]"},
 		desc:     "every command, or one command's flags and examples",
-		more:     "deja <command> --help says the same.",
+		more:     "deja <command> --help says the same, except after aider and goose, where it is that tool's own help.",
 		examples: []string{"deja help blame", "deja blame --help"}},
 
 	{name: "mcp", group: groupAgents,
@@ -310,6 +311,26 @@ func helpEntryFor(name string) (helpEntry, bool) {
 		}
 	}
 	return helpEntry{}, false
+}
+
+// toolOwnsHelp reports whether `deja <name> --help` belongs to the program the
+// command starts rather than to deja.
+func toolOwnsHelp(name string) bool {
+	e, ok := helpEntryFor(name)
+	return ok && e.toolHelp
+}
+
+// runToolHelp hands a help request to the tool itself, the command name being
+// the binary's. Without the recall a real run prepares: a help page starts no
+// session, so nothing is written for one.
+func runToolHelp(name string, rest []string) error {
+	bin, err := exec.LookPath(name)
+	if err != nil {
+		return fmt.Errorf("%s is not on PATH: %w — `deja help %s` is deja's page for it", name, err, name)
+	}
+	cmd := exec.Command(bin, rest...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return cmd.Run()
 }
 
 // searchFlagRows are the flags of the bare query, in the same column as the

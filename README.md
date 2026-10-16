@@ -74,7 +74,7 @@ prints what is indexed and which command to run next.
 - **Indexes the work, not just the talk.** The files each turn opened, the commands with their exit status, the exact spans an edit replaced.
 - **Knows what held.** `deja promote <id> --state rejected` marks a reverted decision, and every later hit says it was tried and why it was dropped; `--state accepted` takes the mark back.
 - **Says when the ground moved.** A hit reports *4 files this session touched have changed since*, and stays quiet when it cannot tell.
-- **Local and private.** No model, no embeddings, no server. Keys and tokens are stripped as the index is built ([privacy](#privacy)).
+- **Local and private.** No model and no server; embeddings only if you turn on [semantic recall](#semantic-recall-optional). Keys and tokens are stripped as the index is built ([privacy](#privacy)).
 - **Moves with you.** `deja sync ssh laptop` between machines, no cloud in between; `deja handoff --to codex` to continue in another agent.
 - **One Go binary.** macOS, Linux and Windows, through Homebrew, Scoop, winget, npm or `go install`.
 
@@ -171,7 +171,8 @@ Indexing and search are local. The network is used only by `deja update`, `deja 
 the version check in `deja doctor`, `deja embed` against an endpoint you configure (and,
 once it has built the semantic sidecar, each search, which sends the query to that
 endpoint), and a once-a-day look at the latest release from an interactive command. That look sends no
-session data; `DEJA_OFFLINE=1` or `DEJA_NO_UPDATE_NOTICE=1` turns it off.
+session data; `DEJA_OFFLINE=1` turns it off, and so does `DEJA_NO_UPDATE_NOTICE` set to any
+value, which also hides the note a new version prints on its first run.
 
 Credentials are stripped as the index is built: cloud and provider keys, tokens and JWTs,
 PEM blocks, passwords in URLs or stated in prose. Each becomes `[redacted:<kind>]` and the

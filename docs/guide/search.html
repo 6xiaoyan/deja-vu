@@ -32,7 +32,7 @@
 <link rel="apple-touch-icon" href="../assets/icon.svg">
 <link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
 <link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Search", "description": "deja search syntax: exact and phrase queries, natural language with stop-word handling, fuzzy typo tolerance, confidence tiers, and optional local semantic recall.", "url": "https://vshulcz.github.io/deja-vu/guide/search.html", "inLanguage": "en", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/guide/search.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-07-19", "dateModified": "2026-10-12"}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Search", "description": "deja search syntax: exact and phrase queries, natural language with stop-word handling, fuzzy typo tolerance, confidence tiers, and optional local semantic recall.", "url": "https://vshulcz.github.io/deja-vu/guide/search.html", "inLanguage": "en", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/guide/search.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-07-19", "dateModified": "2026-10-16"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"deja-vu","item":"https://vshulcz.github.io/deja-vu/"},{"@type":"ListItem","position":2,"name":"Search","item":"https://vshulcz.github.io/deja-vu/guide/search.html"}]}</script>
 </head>
 <body>
@@ -158,15 +158,17 @@
 <h2>What a subagent did</h2>
 <p>When an agent hands work to a subagent — a Claude Code Task, a Cursor subagent — that run gets its own transcript. The parent session keeps the launch and a summary of what came back; the turns and the tool stream exist only in the child file. Claude's child runs, and prime-agent's <code>rlm.spawn</code> children, are read as the task they were handed, the answer they came back with and the edits they made, so <code>deja blame</code> can name the subagent that changed a file — measured on a seeded store, that is a 12% larger index against a 345% one for the whole run, and it is where the settled answers sit. Set <code>DEJA_INCLUDE_SUBAGENTS=1</code> for the whole child transcript, or <code>=0</code> to leave them out entirely. Kimi Code and Qwen Code sub-agent logs come in only with <code>=1</code>. Each child is a session of its own, naming the session that spawned it, so a hit can say which run it came from. Grok Build records the same edge itself, and <code>deja show</code> names the parent and the children either way.</p>
 <h2>When nothing matches exactly</h2>
-<p>On zero results deja widens the net in order, and marks how each hit was found:</p>
-<ul>
-<li><b>Stop-word handling</b> — natural phrasing like "have we dealt with jwt refresh rotation" drops filler words so the content tokens drive the search.</li>
-<li><b>Word forms</b> — <code>rotation</code> ↔ <code>rotated</code> via suffix folding.</li>
-<li><b>Typos</b> — close spellings within edit distance.</li>
-<li><b>Error signature</b> — paste a failing stack trace and deja matches the sessions that hit the same error by its <em>signature</em>, not its words, and can name the command that cleared it last time (<code>deja fix</code>, MCP <code>fix</code>).</li>
-<li><b>Semantic</b> — if a vector sidecar exists, a rephrased query with no shared words still matches.</li>
-</ul>
-<p>Each result carries a tier — <code>exact</code>, <code>close</code> (with the variant), or <code>semantic</code> (with the cosine) — in the CLI, JSON and MCP output.</p>
+<p>Stop words come out of every query first, so natural phrasing like "have we dealt with jwt refresh rotation" is searched on its content words. When no session holds those together, deja widens the net in this order, stops at the first step that finds something, and marks how each hit was found:</p>
+<ol>
+<li><b>Inside longer words</b> — <code>code</code> finds <code>opencode</code>. Tier <code>close</code>. When a question in plain words lands this way on one incidental session, the relevance ranking below answers instead, with these hits after it.</li>
+<li><b>Word forms</b> — <code>rotation</code> ↔ <code>rotated</code> via suffix folding; a word no session holds together with the rest is dropped, and deja says which. Tier <code>stemmed</code>.</li>
+<li><b>Typos</b> — close spellings within edit distance. Tier <code>close</code>.</li>
+<li><b>Words that travel together</b> — for two words no session holds together, a word this history keeps beside one of them, which is often the project's own name for the thing. Tier <code>stemmed</code>.</li>
+<li><b>Error signature</b> — paste a failing stack trace and deja matches the sessions that hit the same error by its <em>signature</em>, not its words, and can name the command that cleared it last time (<code>deja fix</code>, MCP <code>fix</code>). Tier <code>error</code>, and these are matches.</li>
+<li><b>Relevance</b> — sessions ranked by how many of the query's informative words they share, rarer words counting for more. Tier <code>relevance</code>, which means no session held every word; in <code>--json</code>, <code>strict</code> counts the ones that did.</li>
+<li><b>Semantic</b> — only when every step above found nothing, and only with a vector sidecar: a rephrased query with no shared words still matches. Tier <code>semantic</code>. With a sidecar, ordinary results are also reordered by how close their vectors are to the query's.</li>
+</ol>
+<p>Each result carries its tier — <code>exact</code>, <code>close</code>, <code>stemmed</code>, <code>error</code>, <code>relevance</code> or <code>semantic</code> — in the CLI, JSON and MCP output, and on <code>close</code> and <code>stemmed</code> the JSON says which spelling matched (<code>tier_detail</code>).</p>
 <h2>Semantic recall</h2>
 <pre>deja embed          # build a vector sidecar from an embedding endpoint
 deja "ran out of db connections"   # matches "connection pool exhausted"</pre>

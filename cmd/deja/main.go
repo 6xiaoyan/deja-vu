@@ -419,6 +419,12 @@ func run(args []string) error {
 	sourceInstance := os.Getenv("DEJA_SOURCE_INSTANCE")
 	warnBrokenPolicy(args[0], os.Stderr)
 	if wantsHelp(args[1:]) {
+		// `deja aider --help` is aider's: the help page promises the rest of
+		// the line goes to the tool, and answering with deja's page left no
+		// way to reach the tool's own short of calling it directly.
+		if toolOwnsHelp(args[0]) {
+			return runToolHelp(args[0], args[1:])
+		}
 		if h := helpForCommand(args[0]); h != "" {
 			// The same width the page itself respects: `deja last --help`
 			// quotes the widest line in it, so a single command's help was

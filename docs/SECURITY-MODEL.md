@@ -84,6 +84,13 @@ Compaction capture and first-edit measurement events use this same bounded log.
 They carry hashed session/workspace identifiers, a capture revision, action
 counts, and short failure reasons. They do not contain the recovery packet.
 
+The sibling file `<index-dir>.injections.jsonl` is what `deja log` reads: one
+line per injection it can show, with the full text as the agent received it,
+already redacted, plus the kind, time, receiving session, policy name and the
+projects it was built from. It keeps the last 20
+entries, rotating at 512 KiB. Unlike the usage log, this file holds session
+text.
+
 The interactive screen keeps `<index-dir>.tui-history`: the last 100 searches
 typed on it that led to reading, resuming, continuing or copying a session, one
 per line, written 0600. Unlike the usage log, this file holds query text.
@@ -133,8 +140,11 @@ once-a-day release check described last:
   stderr if a newer release is out. No session data is sent. Hooks, the MCP
   server and the other commands a harness starts never start it, even when the
   harness gives them a terminal; nor do pipes, dev builds and `deja update`,
-  `doctor` and `version`. `DEJA_OFFLINE=1` or `DEJA_NO_UPDATE_NOTICE=1` turns it off, and
-  then no request is made.
+  `doctor` and `version`. `DEJA_OFFLINE=1` turns it off, and so does
+  `DEJA_NO_UPDATE_NOTICE` set to any non-empty value; either way no request is
+  made. `DEJA_NO_UPDATE_NOTICE` also hides the one-time note a new version
+  prints on its first run, which `DEJA_OFFLINE=1` leaves on because it comes
+  from the binary rather than the network.
 - `deja embed` and hybrid search talk to the embedding endpoint you configured
   (an Ollama or LM Studio address, normally on localhost). Without that
   configuration the semantic path is off and nothing is sent anywhere. It is
@@ -151,8 +161,10 @@ pipeline, or later user action sends them elsewhere.
 
 ## Redaction boundary
 
-Redaction runs before session messages and titles are stored in the index and
-runs again for share and sync export output. It replaces matched values while
+Redaction runs before session messages and titles are stored in the index,
+runs again for share and sync export output, and runs a third time when
+`deja sync import` reads a batch, so a batch written by an older deja, or by
+hand, is masked by this machine's rules before it is stored. It replaces matched values while
 leaving surrounding text searchable. `deja share` and `deja stats --year` also run an
 outbound pass that masks IP addresses, internal hostnames, emails and
 home-directory paths, including encoded folder names like `-Users-<name>-src`.
@@ -306,15 +318,38 @@ index; the exclude list and `deja forget` above do that.
 
 ## Recall output framing
 
-Agent-facing recall (the MCP tool's `recall` and `context` modes and the
-SessionStart hook digest) is wrapped in `<deja-recall>` markers with a
-preamble stating the content is untrusted historical data and instructions
-inside it must not be followed. Transcripts can carry text an attacker
-influenced (a directive copied from a web page persists in the index and
-replays into later sessions); framing keeps models from treating replayed
-text as commands. The framing bytes count against the existing injection
-budgets, empty results stay unwrapped, and human-facing CLI output is
-unchanged.
+Text drawn from history that deja hands to an agent is wrapped in
+`<deja-recall>` markers with a preamble stating the content is untrusted
+historical data and instructions inside it must not be followed. Transcripts
+can carry text an attacker influenced (a directive copied from a web page
+persists in the index and replays into later sessions); framing keeps models
+from treating replayed text as commands. A marker that appears inside the
+recalled text itself, in any spelling a model would read as one, is
+neutralised so it cannot close the frame early.
+
+The frame covers:
+
+- every MCP tool mode that returns history — `recall`, `context`, `blame`,
+  `fix`, `how`, `orient` and `handoff` — and the session resource; `remember`
+  stores a note and returns only a confirmation;
+- every hook that adds context: the session-start digest and the machine
+  facts block (`hook-context`), per-prompt recall and handoff
+  (`hook-prompt`), the line before a command or edit (`hook-tool`), the fix
+  after a failed command (`hook-tool-after`, and its deferred delivery on
+  hosts that drop the first event's output), the plan check (`hook-plan`),
+  the compaction recovery packet and the nudge to `remember` a failure;
+- the generated integrations that deliver it themselves: the Aider and Goose
+  wrappers, the Antigravity and CodeWhale hooks, and the Reasonix sidecar's
+  compaction note;
+- `deja recall`, which prints the MCP recall page for skills that drive deja
+  through the shell, and any command run with `--framed` in front of it
+  (`deja --framed search …`), which the agent tools in the dsh, opencode,
+  OpenClaw and Hermes plugins and the skills and slash commands that send an
+  agent to the shell use.
+
+The framing bytes count against the existing injection budgets, a budget that
+cuts a block closes its frame rather than leaving it open, empty results stay
+unwrapped, and human-facing CLI output without `--framed` is unchanged.
 
 ## Config backups
 
@@ -326,9 +361,12 @@ existing live config is preserved on update.
 On non-Windows hosts install also writes `~/.config/deja/bin/deja-hook`, a
 shell script the hook entries name so an upgrade that moves the binary does not
 have to rewrite every config. It is 0755 in a directory the user owns, and it
-runs the first executable it finds among `DEJA_BIN`, the path the install ran
-from, the `PATH`, and the usual install locations — so anything that can write
-those can already run code as that user. It is removed when the last target is
+runs the first executable it finds among, in this order, `DEJA_BIN`, the path
+the install ran from, `~/.local/bin/deja`, `~/bin/deja`, the usual install
+locations (`/usr/local/bin`, `/opt/homebrew/bin`, `/home/linuxbrew/.linuxbrew/bin`,
+`/usr/bin`) and finally the `PATH` — so anything that can write those can
+already run code as that user. The fixed paths come before the `PATH` because a
+GUI-launched agent often hands its hooks a short one. It is removed when the last target is
 uninstalled.
 
 The script also records the `XDG_*` base directories that differ from the

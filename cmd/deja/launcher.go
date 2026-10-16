@@ -147,9 +147,10 @@ func removeDejaLauncher() {
 	pruneCreatedDir(filepath.Dir(path))
 }
 
-// dejaLauncherScript is the resolver itself. Order matters and is the one from
-// #3422: an explicit DEJA_BIN, then the path this install ran from, then the
-// PATH, then where the installers put it.
+// dejaLauncherScript is the resolver itself. Order matters: an explicit
+// DEJA_BIN, then the path this install ran from, then where the installers
+// put it (launcherCandidates), and the PATH last, since a GUI-launched agent
+// hands its hooks a short one.
 //
 // It ends by exiting 0 with nothing on stdout. A hook that cannot find deja has
 // no memory to add, and saying so on stderr every turn — or failing, which some

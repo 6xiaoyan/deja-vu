@@ -11,6 +11,20 @@
     <name>vshulcz</name>
   </author>
   <entry>
+    <title>deja CLI reference: search, recall, blame, stats — deja-vu</title>
+    <id>https://vshulcz.github.io/deja-vu/guide/commands.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/commands.html"></link>
+    <updated>2026-10-16T00:00:00Z</updated>
+    <summary>Every deja subcommand: search, ctx, blame, fix, how, secrets, remember, forget, stats, last, sources, install, embed, sync, doctor, bench and update.</summary>
+  </entry>
+  <entry>
+    <title>API keys in your coding agent transcripts — deja-vu</title>
+    <id>https://vshulcz.github.io/deja-vu/guide/credentials-in-transcripts.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/credentials-in-transcripts.html"></link>
+    <updated>2026-10-16T00:00:00Z</updated>
+    <summary>Agents write every command output to plaintext transcripts. One machine held 84 credentials in 42 sessions. How to find yours, and what to do about them.</summary>
+  </entry>
+  <entry>
     <title>Delete Copilot CLI session history — deja-vu</title>
     <id>https://vshulcz.github.io/deja-vu/guide/delete-copilot-cli-session-history.html</id>
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/delete-copilot-cli-session-history.html"></link>
@@ -23,6 +37,48 @@
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/delete-qwen-code-chat-history.html"></link>
     <updated>2026-10-16T00:00:00Z</updated>
     <summary>Qwen Code keeps one JSONL file per session under ~/.qwen/projects. Delete one session with its sub-agent logs, or all, and keep your settings.</summary>
+  </entry>
+  <entry>
+    <title>Privacy — deja-vu docs</title>
+    <id>https://vshulcz.github.io/deja-vu/guide/privacy.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/privacy.html"></link>
+    <updated>2026-10-16T00:00:00Z</updated>
+    <summary>deja is local by design: no network path in indexing or search unless semantic search is on, credentials redacted at index time, and forget/exclude controls.</summary>
+  </entry>
+  <entry>
+    <title>Search your Claude Code and Codex history — deja-vu</title>
+    <id>https://vshulcz.github.io/deja-vu/guide/search.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/search.html"></link>
+    <updated>2026-10-16T00:00:00Z</updated>
+    <summary>deja search syntax: exact and phrase queries, natural language with stop words, fuzzy typo tolerance, confidence tiers, and optional local semantic recall.</summary>
+  </entry>
+  <entry>
+    <title>Sync coding-agent history between machines — deja-vu</title>
+    <id>https://vshulcz.github.io/deja-vu/guide/sync-across-machines.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/sync-across-machines.html"></link>
+    <updated>2026-10-16T00:00:00Z</updated>
+    <summary>How to sync between machines without a server: one person, two laptops, one history their agents can all read.</summary>
+  </entry>
+  <entry>
+    <title>给 Claude Code 加记忆：召回这台机器上所有智能体的历史会话 — deja-vu</title>
+    <id>https://vshulcz.github.io/deja-vu/zh/guide/memory-for-claude-code.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/zh/guide/memory-for-claude-code.html"></link>
+    <updated>2026-10-16T00:00:00Z</updated>
+    <summary>如何让 Claude Code 查到这台机器上每个编程智能体的会话：MCP 服务器、SessionStart 钩子和插件市场。</summary>
+  </entry>
+  <entry>
+    <title>给 Cursor 加记忆：召回这台机器上所有智能体的历史会话 — deja-vu</title>
+    <id>https://vshulcz.github.io/deja-vu/zh/guide/memory-for-cursor.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/zh/guide/memory-for-cursor.html"></link>
+    <updated>2026-10-16T00:00:00Z</updated>
+    <summary>如何让 Cursor 查到这台机器上每个编程智能体的会话：它的 SQLite 聊天记录存在哪，以及 deja install cursor-auto 写入了什么。</summary>
+  </entry>
+  <entry>
+    <title>隐私：索引什么、脱敏什么、什么都不外传 — deja-vu</title>
+    <id>https://vshulcz.github.io/deja-vu/zh/guide/privacy.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/zh/guide/privacy.html"></link>
+    <updated>2026-10-16T00:00:00Z</updated>
+    <summary>deja 索引的是可能含有凭据的会话历史：索引和检索都在本地，凭据在写入前就被脱敏，排除、遗忘与信任范围决定留下什么。</summary>
   </entry>
   <entry>
     <title>deja-vu — the one memory your coding agents share</title>
@@ -67,13 +123,6 @@
     <summary>Cascade writes each conversation to an encrypted file under ~/.codeium/windsurf and starts new ones without them. deja reads the files and gives Cascade recall.</summary>
   </entry>
   <entry>
-    <title>Privacy — deja-vu docs</title>
-    <id>https://vshulcz.github.io/deja-vu/guide/privacy.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/privacy.html"></link>
-    <updated>2026-10-15T00:00:00Z</updated>
-    <summary>deja is local by design: no network path in indexing or search unless semantic search is on, credentials redacted at index time, and forget/exclude controls.</summary>
-  </entry>
-  <entry>
     <title>How to delete Claude Code sessions — deja-vu</title>
     <id>https://vshulcz.github.io/deja-vu/guide/session-files-on-disk.html</id>
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/session-files-on-disk.html"></link>
@@ -86,20 +135,6 @@
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/zh/guide/delete-old-claude-sessions.html"></link>
     <updated>2026-10-15T00:00:00Z</updated>
     <summary>find ~/.claude/projects -mtime +30 -delete 一条命令就能清掉，cleanupPeriodDays 则按时间自动清——以及为什么按时间删腾出的磁盘远比按大小删少。</summary>
-  </entry>
-  <entry>
-    <title>给 Claude Code 加记忆：召回这台机器上所有智能体的历史会话 — deja-vu</title>
-    <id>https://vshulcz.github.io/deja-vu/zh/guide/memory-for-claude-code.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/zh/guide/memory-for-claude-code.html"></link>
-    <updated>2026-10-15T00:00:00Z</updated>
-    <summary>如何让 Claude Code 查到这台机器上每个编程智能体的会话：MCP 服务器、SessionStart 钩子和插件市场。</summary>
-  </entry>
-  <entry>
-    <title>给 Cursor 加记忆：召回这台机器上所有智能体的历史会话 — deja-vu</title>
-    <id>https://vshulcz.github.io/deja-vu/zh/guide/memory-for-cursor.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/zh/guide/memory-for-cursor.html"></link>
-    <updated>2026-10-15T00:00:00Z</updated>
-    <summary>如何让 Cursor 查到这台机器上每个编程智能体的会话：它的 SQLite 聊天记录存在哪，以及 deja install cursor-auto 写入了什么。</summary>
   </entry>
   <entry>
     <title>Persistent memory for coding agents over MCP — deja-vu</title>
@@ -121,13 +156,6 @@
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/codex-resume-session.html"></link>
     <updated>2026-10-14T00:00:00Z</updated>
     <summary>codex resume, --all, --last and exec resume: why a session is missing from the picker, and the no rollout found and is archived errors.</summary>
-  </entry>
-  <entry>
-    <title>API keys in your coding agent transcripts — deja-vu</title>
-    <id>https://vshulcz.github.io/deja-vu/guide/credentials-in-transcripts.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/credentials-in-transcripts.html"></link>
-    <updated>2026-10-14T00:00:00Z</updated>
-    <summary>Agents write every command output to plaintext transcripts. One machine held 84 credentials in 42 sessions. How to find yours, and what to do about them.</summary>
   </entry>
   <entry>
     <title>What each memory tool knows the day you install it — deja-vu</title>
@@ -261,33 +289,5 @@
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/memory-for-codex.html"></link>
     <updated>2026-10-14T00:00:00Z</updated>
     <summary>How to give Codex CLI recall over every coding agent&#39;s sessions on this machine — the MCP server, the hook it has to approve, and the plugin marketplace.</summary>
-  </entry>
-  <entry>
-    <title>Add memory to Command Code: past sessions — deja-vu</title>
-    <id>https://vshulcz.github.io/deja-vu/guide/memory-for-commandcode.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/memory-for-commandcode.html"></link>
-    <updated>2026-10-14T00:00:00Z</updated>
-    <summary>Command Code logs a session per project and starts each one cold. deja wires its MCP server, hooks, skill and command, and indexes every agent here.</summary>
-  </entry>
-  <entry>
-    <title>Add memory to Continue: every agent&#39;s sessions — deja-vu</title>
-    <id>https://vshulcz.github.io/deja-vu/guide/memory-for-continue.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/memory-for-continue.html"></link>
-    <updated>2026-10-14T00:00:00Z</updated>
-    <summary>Continue has no hook that fires yet, so deja arrives as an MCP server in its assistant config, a skill it names on every turn, and a /deja command.</summary>
-  </entry>
-  <entry>
-    <title>Add memory to VS Code Copilot Chat — deja-vu</title>
-    <id>https://vshulcz.github.io/deja-vu/guide/memory-for-copilot-chat.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/memory-for-copilot-chat.html"></link>
-    <updated>2026-10-14T00:00:00Z</updated>
-    <summary>How to give VS Code Copilot Chat recall over every agent&#39;s sessions on the machine, the mcp.json shape VS Code reads, and its hooks.</summary>
-  </entry>
-  <entry>
-    <title>Add memory to Copilot CLI: every agent&#39;s sessions — deja-vu</title>
-    <id>https://vshulcz.github.io/deja-vu/guide/memory-for-copilot.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/memory-for-copilot.html"></link>
-    <updated>2026-10-14T00:00:00Z</updated>
-    <summary>How to give GitHub Copilot CLI recall over every coding agent&#39;s sessions on this machine — where its events live, and the MCP entry it needs.</summary>
   </entry>
 </feed>
