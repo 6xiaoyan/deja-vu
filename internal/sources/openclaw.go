@@ -3,6 +3,8 @@ package sources
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -172,6 +174,8 @@ func parseOpenClawArchive(path string) ([]model.Session, error) {
 	return ss, err
 }
 
+var errNoZstd = errors.New("zstd CLI not found")
+
 // zstdDecoded decompresses a .zst transcript into memory. deja carries no Go
 // dependencies, so the frames go through the same `zstd` CLI the Zed and
 // DeepSeek stores already need; harness names the store in the error, so a
@@ -181,6 +185,12 @@ func parseOpenClawArchive(path string) ([]model.Session, error) {
 // before redaction, and a copy in $TMPDIR outlived any pass that was killed
 // while parsing it (#5052). The archive is read whole either way.
 func zstdDecoded(path, harness string) ([]byte, error) {
+	// Check before reading: until zstd is installed nothing changes between
+	// passes. Keep the file out of the manifest so the first pass with zstd
+	// reads it (#5061).
+	if !ZstdAvailable() {
+		return nil, fmt.Errorf("%s: %s: %w", harness, filepath.Base(path), errNoZstd)
+	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
