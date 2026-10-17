@@ -40,6 +40,7 @@ const (
 	modalPalette
 	modalNews
 	modalForget
+	modalDelete
 )
 
 type tuiApp struct {

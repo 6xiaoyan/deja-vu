@@ -81,6 +81,12 @@ func (a *tuiApp) handleForget(ev tui.Event) {
 // forgetSession runs what `deja forget --session <id>` runs, off the loop:
 // the rebuild that takes the records out can take a while.
 func (a *tuiApp) forgetSession(s model.Session) {
+	a.forgetSaying(s, "Forgotten. deja forget --unforget "+s.ID+" brings it back.", "Not forgotten: ")
+}
+
+// forgetSaying is forgetSession with its own last word: a delete has nothing
+// for --unforget to bring back.
+func (a *tuiApp) forgetSaying(s model.Session, done, failed string) {
 	forget := a.forget
 	if forget == nil {
 		forget = forgetInChild(a.dir)
@@ -90,7 +96,7 @@ func (a *tuiApp) forgetSession(s model.Session) {
 		err := forget(s.ID)
 		a.post(func() {
 			if err != nil {
-				a.say("Not forgotten: "+err.Error(), false)
+				a.say(failed+err.Error(), false)
 				return
 			}
 			delete(a.details, sessionKey(s))
@@ -105,7 +111,7 @@ func (a *tuiApp) forgetSession(s model.Session) {
 				a.sel = min(at, len(a.rows)-1)
 				a.want(a.rows[a.sel].s)
 			}
-			a.say("Forgotten. deja forget --unforget "+s.ID+" brings it back.", true)
+			a.say(done, true)
 		})
 	})
 }

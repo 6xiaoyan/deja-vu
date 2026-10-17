@@ -60,6 +60,7 @@ the list narrows as you type.
 - The box takes filters: an agent with a colon (`codex:`), `today`, `yesterday`, `week`, `month`, and `in:<project>`.
 - `r` resumes the session in the agent that wrote it. `o` continues it in any other agent, which starts with what the session asked, decided and left open.
 - `tab` switches between this project, all projects and Deleted, the sessions their agent deleted that deja still holds; `R` puts one back.
+- `D` erases a session from its agent and from deja, after asking (`deja delete <id>` from a script).
 - `?` lists every key, `^k` has the rest (copy the session id or project path, forget a session), `q` quits from the list; `esc` steps back and quits from an empty search box.
 
 With `DEJA_TUI=0` it prints the text summary instead, which is also `deja brief`. Piped, it

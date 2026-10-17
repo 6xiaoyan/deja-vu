@@ -92,6 +92,9 @@ _deja_completion() {
         doctor)
             COMPREPLY=( $(compgen -W "--json --offline --deep --all" -- "$cur") )
             ;;
+        delete)
+            COMPREPLY=( $(compgen -W "--dry-run --yes" -- "$cur") )
+            ;;
         forget)
             COMPREPLY=( $(compgen -W "--list --dry-run --session --project --before --unforget --all-matches" -- "$cur") )
             ;;
@@ -228,6 +231,7 @@ _deja() {
     'recap:what the last week settled, with receipts'
     'recall:the page the MCP recall tool gives an agent'
     'how:commands this machine actually ran for a thing'
+    'delete:erase a session from its agent and from deja'
     'doctor:diagnose local stores and wiring'
     'promote:distill a session into a curated note'
     'rules:copy your rules file into every agent, or list your corrections'
@@ -282,6 +286,9 @@ _deja() {
       ;;
     doctor)
       _arguments '--json[print JSON]' '--offline[skip version check]' '--deep[verify index against sources]' '--all[list every store, missing ones included]'
+      ;;
+    delete)
+      _arguments '--dry-run[list the files, remove nothing]' '--yes[do not ask]' '1:session ID prefix:'
       ;;
     forget)
       _arguments '--list[list tombstones]' '--dry-run[show changes without applying]' '--session=[session ID prefix]:session:' '--project=[project substring]:project:' '--before=[duration or date]:time:' '--unforget=[tombstone ID]:ID:' '--all-matches[act on every match]'
@@ -391,6 +398,8 @@ complete -c deja -n '__fish_seen_subcommand_from doctor' -l json
 complete -c deja -n '__fish_seen_subcommand_from doctor' -l offline
 complete -c deja -n '__fish_seen_subcommand_from doctor' -l deep
 complete -c deja -n '__fish_seen_subcommand_from doctor' -l all
+complete -c deja -n '__fish_seen_subcommand_from delete' -l dry-run -d 'List the files, remove nothing'
+complete -c deja -n '__fish_seen_subcommand_from delete' -l yes -d 'Do not ask'
 complete -c deja -n '__fish_seen_subcommand_from forget; and not __fish_seen_subcommand_from sync' -l list
 complete -c deja -n '__fish_seen_subcommand_from forget; and not __fish_seen_subcommand_from sync' -l dry-run
 complete -c deja -n '__fish_seen_subcommand_from forget; and not __fish_seen_subcommand_from sync' -l session -r
@@ -503,6 +512,7 @@ Register-ArgumentCompleter -Native -CommandName deja -ScriptBlock {
             }
             'completion' { @('bash', 'zsh', 'fish', 'powershell', 'pwsh') }
             'doctor' { @('--json', '--offline', '--deep', '--all') }
+            'delete' { @('--dry-run', '--yes') }
             'forget' { @('--list', '--dry-run', '--session', '--project', '--before', '--unforget', '--all-matches') }
             'handoff' {
                 if ($previous -eq '--to') { $handoffTargets }
@@ -580,7 +590,7 @@ Register-ArgumentCompleter -Native -CommandName deja -ScriptBlock {
 // added to one and not the other.
 func completionCommands() []string {
 	return []string{
-		"bench", "blame", "brief", "check", "completion", "ctx", "doctor", "embed",
+		"bench", "blame", "brief", "check", "completion", "ctx", "delete", "doctor", "embed",
 		"files", "fix", "forget", "friction", "handoff", "help", "how", "index",
 		"install", "last", "log", "mcp", "promote", "recall", "recap", "remember", "restore",
 		"resume", "rules", "search", "secrets", "share", "show", "sources", "stats",

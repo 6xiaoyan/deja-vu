@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `deja delete <id>` and `D` in the TUI erase a session from its agent and from deja's index, after asking; there is no undo. `--dry-run` lists the files. Claude Code, Codex, Cursor CLI, Gemini CLI, Qwen Code, Copilot CLI, Cline CLI, Kimi Code, Grok, dsh, pi, Senpi, OpenClaw and Antigravity are removed as files, opencode through `opencode session delete`. Running sessions, shared stores and unchecked agents are refused.
 - A guide on deleting Copilot CLI session history: find the session by the id in `session.start`, not the directory name, and what `copilot --resume` loses. From @beiryu (#4965).
 - A guide on deleting Qwen Code chat history: the chat file, its sub-agent logs, and what `qwen -r` loses. From @beiryu (#4966).
 - Claude Code sessions whose transcript is gone come back as their prompts. `~/.claude/history.jsonl` keeps every typed prompt and paste with its session id after the cleanup deletes the transcript, so those sessions are searchable again, filed under the directory they ran in. Only the prompts: `deja show` says so, and `deja resume` refuses one. A session with its transcript on disk, or one deja kept after it was deleted, is left to the transcript. `DEJA_CLAUDE_HISTORY_FILE` moves the file (#5046).

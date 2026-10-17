@@ -177,6 +177,8 @@ func (a *tuiApp) listAction(r rune) bool {
 		a.copyProjectPath()
 	case 'F':
 		a.askForget()
+	case 'D':
+		a.askDelete()
 	case 'a':
 		a.openModal(modalAgents)
 	case '?':

@@ -53,6 +53,13 @@
     <summary>deja search syntax: exact and phrase queries, natural language with stop words, fuzzy typo tolerance, confidence tiers, and optional local semantic recall.</summary>
   </entry>
   <entry>
+    <title>How to delete Claude Code sessions — deja-vu</title>
+    <id>https://vshulcz.github.io/deja-vu/guide/session-files-on-disk.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/session-files-on-disk.html"></link>
+    <updated>2026-10-16T00:00:00Z</updated>
+    <summary>One session: rm its .jsonl, or pick it from a list. A whole project: claude project purge. On a timer: cleanupPeriodDays. What /clear does.</summary>
+  </entry>
+  <entry>
     <title>Sync coding-agent history between machines — deja-vu</title>
     <id>https://vshulcz.github.io/deja-vu/guide/sync-across-machines.html</id>
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/sync-across-machines.html"></link>
@@ -121,13 +128,6 @@
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/memory-for-windsurf.html"></link>
     <updated>2026-10-15T00:00:00Z</updated>
     <summary>Cascade writes each conversation to an encrypted file under ~/.codeium/windsurf and starts new ones without them. deja reads the files and gives Cascade recall.</summary>
-  </entry>
-  <entry>
-    <title>How to delete Claude Code sessions — deja-vu</title>
-    <id>https://vshulcz.github.io/deja-vu/guide/session-files-on-disk.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/session-files-on-disk.html"></link>
-    <updated>2026-10-15T00:00:00Z</updated>
-    <summary>One session: delete its .jsonl under ~/.claude/projects. A whole project: claude project purge. On a timer: cleanupPeriodDays. What /clear and --resume do.</summary>
   </entry>
   <entry>
     <title>怎么删掉 Claude Code 的旧会话 — deja-vu</title>
