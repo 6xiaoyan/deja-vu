@@ -67,6 +67,13 @@
     <summary>How to sync between machines without a server: one person, two laptops, one history their agents can all read.</summary>
   </entry>
   <entry>
+    <title>Codex CLI 的会话历史：查看、搜索和同步 — deja-vu</title>
+    <id>https://vshulcz.github.io/deja-vu/zh/guide/codex-history.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/zh/guide/codex-history.html"></link>
+    <updated>2026-10-16T00:00:00Z</updated>
+    <summary>Codex CLI 把会话历史放在哪里、为什么 grep 会漏掉一周之前的会话、jq 和 sqlite3 怎么读，以及如何搜索全部 Codex 会话。</summary>
+  </entry>
+  <entry>
     <title>给 Claude Code 加记忆：召回这台机器上所有智能体的历史会话 — deja-vu</title>
     <id>https://vshulcz.github.io/deja-vu/zh/guide/memory-for-claude-code.html</id>
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/zh/guide/memory-for-claude-code.html"></link>
@@ -282,12 +289,5 @@
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/memory-for-codewhale.html"></link>
     <updated>2026-10-14T00:00:00Z</updated>
     <summary>CodeWhale keeps one JSON file per session and reads none of them back. deja indexes them with every other agent on the machine and makes them searchable.</summary>
-  </entry>
-  <entry>
-    <title>Add memory to Codex CLI: every agent&#39;s sessions — deja-vu</title>
-    <id>https://vshulcz.github.io/deja-vu/guide/memory-for-codex.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/memory-for-codex.html"></link>
-    <updated>2026-10-14T00:00:00Z</updated>
-    <summary>How to give Codex CLI recall over every coding agent&#39;s sessions on this machine — the MCP server, the hook it has to approve, and the plugin marketplace.</summary>
   </entry>
 </feed>

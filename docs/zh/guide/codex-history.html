@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-Hans" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codex CLI 的会话历史：查看、搜索和同步 — deja-vu</title>
+<meta name="description" content="Codex CLI 把会话历史放在哪里、为什么 grep 会漏掉一周之前的会话、jq 和 sqlite3 怎么读，以及如何搜索全部 Codex 会话。">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/zh/guide/codex-history.html">
+<link rel="alternate" hreflang="zh-Hans" href="https://vshulcz.github.io/deja-vu/zh/guide/codex-history.html">
+<link rel="alternate" hreflang="en" href="https://vshulcz.github.io/deja-vu/guide/codex-history.html">
+<link rel="alternate" hreflang="x-default" href="https://vshulcz.github.io/deja-vu/guide/codex-history.html">
+<meta property="og:type" content="article">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:title" content="Codex CLI 的会话历史：查看、搜索和同步">
+<meta property="og:description" content="Codex CLI 把会话历史放在哪里、为什么 grep 会漏掉一周之前的会话、jq 和 sqlite3 怎么读，以及如何搜索全部 Codex 会话。">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/zh/guide/codex-history.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="deja-vu — 给编程智能体的可搜索本地记忆">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<meta name="twitter:title" content="Codex CLI 的会话历史：查看、搜索和同步">
+<meta name="twitter:description" content="Codex CLI 把会话历史放在哪里、为什么 grep 会漏掉一周之前的会话、jq 和 sqlite3 怎么读，以及如何搜索全部 Codex 会话。">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../../assets/icon.svg">
+<link rel="stylesheet" href="../../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<link rel="apple-touch-icon" href="../../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Codex CLI 的会话历史：在哪里、怎么读、怎么搜", "description": "Codex CLI 把会话历史放在哪里、为什么 grep 会漏掉一周之前的会话、jq 和 sqlite3 怎么读，以及如何搜索全部 Codex 会话。", "url": "https://vshulcz.github.io/deja-vu/zh/guide/codex-history.html", "inLanguage": "zh-Hans", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/zh/guide/codex-history.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-10-16", "dateModified": "2026-10-16"}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "deja-vu", "item": "https://vshulcz.github.io/deja-vu/"}, {"@type": "ListItem", "position": 2, "name": "Codex CLI 的会话历史", "item": "https://vshulcz.github.io/deja-vu/zh/guide/codex-history.html"}]}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Codex CLI 的会话历史存在哪里？", "acceptedAnswer": {"@type": "Answer", "text": "在 ${CODEX_HOME:-~/.codex} 之下：每个会话一个 rollout 文件，位于 sessions/YYYY/MM/DD/rollout-*.jsonl；七天之后压缩成 .jsonl.zst；归档的会话在 archived_sessions/；你敲过的提示词单独放在 history.jsonl；resume 选择器读的会话列表在 state_5.sqlite 里。"}}, {"@type": "Question", "name": "怎么搜索 Codex 的历史？", "acceptedAnswer": {"@type": "Answer", "text": "codex resume 按标题列出会话，但不在里面搜索。grep 读得了 .jsonl 的 rollout，却会漏掉一周之前的 .jsonl.zst；那些要用 zstdgrep。deja-vu 两种都建索引，还包括归档会话，并把结果排出顺序：deja --harness codex \"你的查询\"。"}}, {"@type": "Question", "name": "能不能在多台机器之间同步 Codex 历史？", "acceptedAnswer": {"@type": "Answer", "text": "Codex 把历史留在本机。deja sync ssh <host> 把 deja 为它建的索引送到另一台机器，在那边用 deja 就能搜；它不会把会话加进那台机器 codex resume 的选择器。"}}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../../"><img src="../../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../../">首页</a><a class="lnk" href="getting-started.html">文档</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../../">← deja-vu</a><div class="grp">中文指南</div>
+<a href="getting-started.html">快速开始</a>
+<a href="does-my-agent-remember.html">智能体记得之前的对话吗</a>
+<a href="forgetting.html">为什么会忘事</a>
+<a href="where-sessions-are-stored.html">历史文件在哪里</a>
+<a href="codex-history.html" aria-current="page">Codex 的会话历史</a>
+<a href="session-files-on-disk.html">会话文件怎么删</a>
+<a href="privacy.html">隐私</a>
+<a href="memory-for-claude-code.html">给 Claude Code 加记忆</a>
+<a href="memory-for-codex.html">给 Codex CLI 加记忆</a>
+<a href="memory-for-cursor.html">给 Cursor 加记忆</a>
+<a href="memory-for-dsh.html">给 DeepSeek Harness 加记忆</a>
+<a href="memory-for-kimi.html">给 Kimi Code 加记忆</a>
+<a href="memory-for-qwen.html">给 Qwen Code 加记忆</a>
+<div class="grp">English</div>
+<a href="../../guide/codex-history.html">Codex history</a>
+<a href="../../guide/where-sessions-are-stored.html">Where history lives</a>
+<a href="../../guide/session-files-on-disk.html">Session files on disk</a>
+<a href="../../guide/harnesses.html">Harnesses</a>
+<a href="../../guide/commands.html">CLI reference</a>
+<div class="grp">Reference</div>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/readme/README.zh.md">中文 README</a>
+<a href="../../registry/README.html">Format registry</a><a class="sidecat" href="../../"><img src="../../assets/icon-live.svg" width="46" height="46" alt=""><span>它记得，你就不必记</span></a></aside>
+<article>
+
+<h1>Codex CLI 的会话历史：在哪里、怎么读、怎么搜</h1>
+<p class="pagelede">每个会话都在磁盘上；Codex 只是把它们列出来，并不搜索<span class="mins" data-mins></span></p>
+
+<p>Codex 记下你跑的每一个会话。它缺的是：没法问你哪一次会话里有过那个修复，也没法在 resume 选择器之外看它们。文件本身足够简单，<code>jq</code> 和 <code>sqlite3</code> 就能读出大半；可跑上一周，有一个细节会让最顺手的 <code>grep</code> 失灵。</p>
+
+<h2>Codex 把它放在哪里</h2>
+<p>一切都在 <code>${CODEX_HOME:-~/.codex}</code> 之下：</p>
+<ul>
+<li><code>sessions/YYYY/MM/DD/rollout-&lt;time&gt;-&lt;id&gt;.jsonl</code>：一个会话一个文件，整段对话随运行不断追加。第一行是 <code>session_meta</code>，里面是会话 id 和工作目录。</li>
+<li>七天之后，Codex 会在后台把 rollout 压缩成 <code>rollout-….jsonl.zst</code>。两种形式 Codex 都读。而凡是在找 <code>*.jsonl</code> 的东西，从此再也看不到一周之前的会话。</li>
+<li><code>archived_sessions/</code>：你归档过的会话，格式相同。</li>
+<li><code>history.jsonl</code>：只有你敲过的提示词，一行一条，带着会话 id。没有回复，也没有命令。</li>
+<li><code>state_5.sqlite</code>：resume 选择器读取的会话列表，含标题、工作目录、git 分支、token 数和归档标记。名字里的数字会跟着 Codex 的版本走。</li>
+</ul>
+
+<h2>Codex 自带的东西</h2>
+<pre>codex resume                 # 选择器，列出在这个目录里开过的会话
+codex resume --all           # 所有目录
+codex resume --last          # 直接进入最近的一个
+codex resume --include-non-interactive   # 连 codex exec 跑的也算
+codex fork                   # 复制一个旧会话继续
+codex archive &lt;id&gt;           # 藏起来；codex unarchive 可以恢复
+codex delete &lt;id&gt;            # 永久删除</pre>
+<p>选择器显示标题和第一条消息，不往对话里面看，也只认 Codex。某个会话在它里面不见了，或者 resume 报出 <code>no rollout found</code>，见<a href="../../guide/codex-resume-session.html">Codex resume</a>。</p>
+
+<h2>不用任何工具去读</h2>
+<p>最近几次会话，以及它们是在哪里跑的：</p>
+<pre>for f in $(ls -t ~/.codex/sessions/*/*/*/rollout-*.jsonl | head -10); do
+  jq -r 'select(.type=="session_meta") | .payload | "\(.timestamp[:16])  \(.cwd)  \(.id)"' "$f"
+done</pre>
+<p>同一份列表，改成只读地读选择器的数据库：</p>
+<pre>sqlite3 -readonly ~/.codex/state_5.sqlite "
+SELECT datetime(updated_at, 'unixepoch', 'localtime'), substr(title, 1, 50), cwd
+FROM threads WHERE archived = 0 ORDER BY updated_at DESC LIMIT 20;"</pre>
+<p>一次会话里你敲过什么，从提示词日志里读。它只记交互式会话，交给 <code>codex exec</code> 的提示词不在里面：</p>
+<pre>jq -r 'select(.session_id=="&lt;id&gt;") | .text' ~/.codex/history.jsonl</pre>
+<p>哪些会话提到过某个词，压缩过的那批也算：</p>
+<pre>grep -l "pgbouncer" ~/.codex/sessions/*/*/*/rollout-*.jsonl
+zstdgrep -l "pgbouncer" ~/.codex/sessions/*/*/*/rollout-*.jsonl.zst</pre>
+<p>这对一个你记得分毫不差的词管用。放到几个月的历史上就慢，没有排序，还会漏掉那次你换了种说法说起它的会话。</p>
+
+<h2>搜索它</h2>
+<p><a href="https://github.com/vshulcz/deja-vu">deja-vu</a> 会给这些文件建索引——压缩过的、归档过的都算在内——和这台机器上其他每个智能体的历史放在一起。它对它们只读不写。</p>
+<pre>deja index
+deja --harness codex "pgbouncer prepared statement"   # 带排序，并附会话 id
+deja last 20 --harness codex                           # 最近的会话，不限目录
+deja show &lt;id&gt;                                         # 那段对话
+deja resume &lt;id&gt;                                       # 能在 Codex 里重新打开它的命令
+deja resume &lt;id&gt; --app                                 # 或者在 ChatGPT 应用里打开
+deja view                                              # 全部内容合成一个本地 HTML 页面</pre>
+<p>不带参数的 <code>deja</code> 打开的是同一个搜索，只是变成一屏边打字边更新的界面：<code>a</code> 把范围收窄到 Codex，<code>↵</code> 在命中的地方读那次会话，<code>r</code> 在 Codex 里重新打开它。</p>
+<p>去掉 <code>--harness codex</code>，同一个搜索就覆盖 Claude Code、Cursor、opencode 以及其余的——答案往往就落在它们那边。凭据在建索引时就被脱敏。deja 索引过的会话，在 <code>codex delete</code> 或一次清理之后仍然搜得到；只有 <code>deja forget</code> 会有意把它丢掉。</p>
+<p>想让 Codex 在会话开始时自己去查，而不是由你手动搜索，见<a href="memory-for-codex.html">给 Codex CLI 加记忆</a>。</p>
+
+<h2>在多台机器上</h2>
+<p>Codex 把历史留在本机，<code>codex resume</code> 也只列出这块磁盘上有的东西。deja 可以把自己的索引通过 SSH 在机器之间搬运，中间不需要任何服务：</p>
+<pre>deja sync ssh devbox        # 把本机的会话推到那边
+deja sync ssh devbox --both # 也把它的会话拉过来</pre>
+<p>送过去的东西，在那边用 <code>deja</code> 就能搜。它不会把会话加进那台机器的 resume 选择器。<a href="../../guide/sync-across-machines.html">跨机器同步</a>有更多细节。</p>
+
+<p><a href="../../guide/delete-codex-sessions.html">删除 Codex 的会话</a> · <a href="where-sessions-are-stored.html">每个智能体把历史存在哪里</a> · <a href="resume-a-session.html">接着一次会话继续</a></p>
+</article>
+</div>
+<footer>deja-vu 采用 MIT 许可，在你的机器上运行。<a href="https://github.com/vshulcz/deja-vu">GitHub 源码</a> · <a href="../../">首页</a></footer>
+</div>
+<script src="../../assets/guide.js" defer></script>
+</body>
+</html>

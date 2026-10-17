@@ -63,6 +63,7 @@ Run `deja` with no arguments in a terminal and it opens a full-screen search ove
 - [为什么会忘事](https://vshulcz.github.io/deja-vu/zh/guide/forgetting.html)：会话结束时消失的是什么，磁盘上留下的是什么
 - [上下文丢了，怎么找回来](https://vshulcz.github.io/deja-vu/zh/guide/lost-context.html)：崩溃、清空或重启之后，会话记录还在，怎么把工作找回来
 - [历史文件在哪里](https://vshulcz.github.io/deja-vu/zh/guide/where-sessions-are-stored.html)：四十二个智能体各自把会话写在磁盘的哪里，用什么格式
+- [Codex 的会话历史](https://vshulcz.github.io/deja-vu/zh/guide/codex-history.html)：Codex 把会话放在哪里、一周之后 grep 漏掉的 .jsonl.zst、jq 和 sqlite3 的读法，以及搜索和同步
 - [会话文件怎么删](https://vshulcz.github.io/deja-vu/zh/guide/session-files-on-disk.html)：Claude Code 的会话文件怎么删、能占多大、删掉之后失去什么
 - [找回被删掉的会话](https://vshulcz.github.io/deja-vu/zh/guide/recover-a-deleted-session.html)：claude --resume 里找不到那次会话时，四种原因里有三种不是删除，真正还能找回的是什么
 - [找回解决问题的那次会话](https://vshulcz.github.io/deja-vu/zh/guide/find-a-session.html)：按记得的词在所有智能体里同时搜历史，然后继续那次对话
