@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/vshulcz/deja-vu/internal/model"
@@ -107,12 +108,45 @@ func zedConfigDir(goos string) string {
 	return filepath.Join(Home(), ".config", "zed")
 }
 
+// zstdPin holds the answer for the pass in progress. Asked per file, the
+// lookup walked PATH (and PATHEXT on Windows) once per rollout: 1500 times
+// for 1500 compressed files (#5105). Outside a pass it is asked live.
+var zstdPin struct {
+	mu     sync.Mutex
+	pinned bool
+	ok     bool
+}
+
 // ZstdAvailable reports whether the zstd CLI the zed parser shells out to is
 // on PATH. Zed compresses every thread it writes, so without this the store is
 // readable but its contents are not.
 func ZstdAvailable() bool {
+	zstdPin.mu.Lock()
+	defer zstdPin.mu.Unlock()
+	if zstdPin.pinned {
+		return zstdPin.ok
+	}
 	_, err := exec.LookPath("zstd")
 	return err == nil
+}
+
+// PinZstd answers ZstdAvailable once for a whole pass; the returned func
+// unpins, so the next pass sees a zstd installed in between. A pass that
+// rebuilds runs a second pass inside the first, so unpinning restores what
+// was there rather than clearing it, and a nested pin keeps the outer answer.
+func PinZstd() func() {
+	zstdPin.mu.Lock()
+	defer zstdPin.mu.Unlock()
+	prevPinned, prevOK := zstdPin.pinned, zstdPin.ok
+	if !zstdPin.pinned {
+		_, err := exec.LookPath("zstd")
+		zstdPin.pinned, zstdPin.ok = true, err == nil
+	}
+	return func() {
+		zstdPin.mu.Lock()
+		zstdPin.pinned, zstdPin.ok = prevPinned, prevOK
+		zstdPin.mu.Unlock()
+	}
 }
 
 func LoadZed() []model.Session {

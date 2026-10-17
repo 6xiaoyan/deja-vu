@@ -15,6 +15,7 @@ var diagMalformed = map[string]int{}
 var diagFailed = map[string]string{}
 var diagReasons = map[string]string{}
 var diagRecords = map[string]map[string]string{}
+var diagZstdMissing = map[string]bool{}
 
 func diagMalformedLine(path string) {
 	diagMu.Lock()
@@ -58,6 +59,24 @@ func diagFileError(path string, err error) {
 	diagMu.Lock()
 	diagFailed[path] = err.Error()
 	diagMu.Unlock()
+}
+
+// diagNoZstd records a transcript left unread because the zstd CLI is missing.
+// Unlike a file that would not open, nothing about it changes until zstd is
+// installed, so the index can hold it as waiting rather than read it as
+// changed on every pass (#5105).
+func diagNoZstd(path string) {
+	diagMu.Lock()
+	diagZstdMissing[path] = true
+	diagMu.Unlock()
+}
+
+// DiagNoZstdPaths returns the transcripts left unread for want of zstd so far,
+// without clearing them.
+func DiagNoZstdPaths() map[string]bool {
+	diagMu.Lock()
+	defer diagMu.Unlock()
+	return maps.Clone(diagZstdMissing)
 }
 
 // DiagMalformedCounts returns the malformed-line counts accumulated so far
@@ -123,5 +142,6 @@ func DiagSnapshot() (malformed map[string]int, failed map[string]string) {
 	diagFailed = map[string]string{}
 	diagReasons = map[string]string{}
 	diagRecords = map[string]map[string]string{}
+	diagZstdMissing = map[string]bool{}
 	return malformed, failed
 }

@@ -1079,6 +1079,13 @@ type Manifest struct {
 	// local one, so a pass in another zone rereads them (#5053). Empty on a
 	// store from before the field, which says nothing.
 	ReadZone string `json:"read_zone,omitempty"`
+	// Deferred holds the transcripts a pass left unread because zstd was
+	// missing, with the state its walk saw. Not in Files: Files says what is
+	// indexed, and a rollout held there would read as unchanged the day zstd
+	// arrives. Left out of both, it read as changed on every pass, and every
+	// search rewrote the manifest for 1500 rollouts it still could not read
+	// (#5105). Additive: an older store decodes with it empty.
+	Deferred map[string]FileState `json:"deferred,omitempty"`
 }
 
 // HarnessIngest is one harness's ingestion health from its last indexing pass.
@@ -1142,6 +1149,7 @@ type manifestCore struct {
 	Compactions        map[string]CompactionState
 	KeptDated          bool
 	ReadZone           string
+	Deferred           map[string]FileState
 }
 
 type RedactionStats struct {

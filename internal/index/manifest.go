@@ -413,7 +413,7 @@ func Redactions(dir string) (RedactionStats, error) {
 }
 
 func manifestFresh(m Manifest, files map[string]FileState, scope string) bool {
-	if m.Version != version || len(m.Files) < len(files) {
+	if m.Version != version || len(m.Files)+len(m.Deferred) < len(files) {
 		return false
 	}
 	// A store from before deletions were dated is read once more, so the pass
@@ -445,7 +445,15 @@ func manifestFresh(m Manifest, files map[string]FileState, scope string) bool {
 	if m.Scope != scope {
 		return false
 	}
+	// A rollout waiting for zstd changes nothing until it changes or zstd
+	// arrives (#5105). The fingerprint cannot say the second: it keeps
+	// zstd=true once any process saw zstd, so a rollout a hook deferred with a
+	// short PATH would never be read by the terminal that has it. Ask, once.
+	zstdMissing := len(m.Deferred) > 0 && !sources.ZstdAvailable()
 	for p, f := range files {
+		if d, ok := m.Deferred[p]; ok && zstdMissing && sameFile(d, f) {
+			continue
+		}
 		if !sameFile(m.Files[p], f) || m.Files[p].Kept {
 			return false
 		}
@@ -458,7 +466,7 @@ func readManifest(dir string) (Manifest, error) {
 	if err := readGob(filepath.Join(dir, "manifest.gob"), &core); err != nil {
 		return Manifest{}, err
 	}
-	m := Manifest{Version: core.Version, Format: core.Format, Files: core.Files, BuiltAt: core.BuiltAt, SourcesReadAt: core.SourcesReadAt, Generation: core.Generation, Scope: core.Scope, Redacted: core.Redacted, RedactionRules: core.RedactionRules, ExportWatermarks: core.ExportWatermarks, ExportBoundary: core.ExportBoundary, ImportedRecords: core.ImportedRecords, RecordStrings: core.RecordStrings, RecordsSize: core.RecordsSize, BucketFiles: core.BucketFiles, IngestHealth: core.IngestHealth, IngestFiles: core.IngestFiles, ExcludeFingerprint: core.ExcludeFingerprint, ToolFingerprint: core.ToolFingerprint, Compactions: core.Compactions, KeptDated: core.KeptDated, ReadZone: core.ReadZone, Sessions: map[string]SessionMeta{}}
+	m := Manifest{Version: core.Version, Format: core.Format, Files: core.Files, BuiltAt: core.BuiltAt, SourcesReadAt: core.SourcesReadAt, Generation: core.Generation, Scope: core.Scope, Redacted: core.Redacted, RedactionRules: core.RedactionRules, ExportWatermarks: core.ExportWatermarks, ExportBoundary: core.ExportBoundary, ImportedRecords: core.ImportedRecords, RecordStrings: core.RecordStrings, RecordsSize: core.RecordsSize, BucketFiles: core.BucketFiles, IngestHealth: core.IngestHealth, IngestFiles: core.IngestFiles, ExcludeFingerprint: core.ExcludeFingerprint, ToolFingerprint: core.ToolFingerprint, Compactions: core.Compactions, KeptDated: core.KeptDated, ReadZone: core.ReadZone, Deferred: core.Deferred, Sessions: map[string]SessionMeta{}}
 	if err := readGob(filepath.Join(dir, "sessions.gob"), &m.Sessions); err != nil {
 		return Manifest{}, err
 	}
@@ -470,7 +478,7 @@ func readManifest(dir string) (Manifest, error) {
 // caller has not loaded sessions and must not clobber them. It wrote no
 // records, so it keeps the sizes the manifest committed: see stampStore.
 func writeManifestOnly(dir string, m Manifest) error {
-	core := manifestCore{Version: m.Version, Format: m.Format, Files: m.Files, BuiltAt: m.BuiltAt, SourcesReadAt: m.SourcesReadAt, Generation: m.Generation, Scope: m.Scope, Redacted: m.Redacted, RedactionRules: m.RedactionRules, ExportWatermarks: m.ExportWatermarks, ExportBoundary: m.ExportBoundary, ImportedRecords: m.ImportedRecords, RecordStrings: m.RecordStrings, IngestHealth: m.IngestHealth, IngestFiles: m.IngestFiles, ExcludeFingerprint: m.ExcludeFingerprint, ToolFingerprint: m.ToolFingerprint, Compactions: m.Compactions, KeptDated: m.KeptDated, ReadZone: m.ReadZone}
+	core := manifestCore{Version: m.Version, Format: m.Format, Files: m.Files, BuiltAt: m.BuiltAt, SourcesReadAt: m.SourcesReadAt, Generation: m.Generation, Scope: m.Scope, Redacted: m.Redacted, RedactionRules: m.RedactionRules, ExportWatermarks: m.ExportWatermarks, ExportBoundary: m.ExportBoundary, ImportedRecords: m.ImportedRecords, RecordStrings: m.RecordStrings, IngestHealth: m.IngestHealth, IngestFiles: m.IngestFiles, ExcludeFingerprint: m.ExcludeFingerprint, ToolFingerprint: m.ToolFingerprint, Compactions: m.Compactions, KeptDated: m.KeptDated, ReadZone: m.ReadZone, Deferred: m.Deferred}
 	stampStore(dir, &core, m, false)
 	err := writeGobAtomic(filepath.Join(dir, "manifest.gob"), core)
 	invalidateManifestCache(dir)
@@ -513,7 +521,7 @@ func writeManifestMeta(dir string, m Manifest) error {
 
 func commitManifest(dir string, m Manifest, wroteRecords bool) error {
 	mergeIngestDiag(&m)
-	core := manifestCore{Version: m.Version, Format: m.Format, Files: m.Files, BuiltAt: m.BuiltAt, SourcesReadAt: m.SourcesReadAt, Generation: m.Generation, Scope: m.Scope, Redacted: m.Redacted, RedactionRules: m.RedactionRules, ExportWatermarks: m.ExportWatermarks, ExportBoundary: m.ExportBoundary, ImportedRecords: m.ImportedRecords, RecordStrings: m.RecordStrings, IngestHealth: m.IngestHealth, IngestFiles: m.IngestFiles, ExcludeFingerprint: m.ExcludeFingerprint, ToolFingerprint: m.ToolFingerprint, Compactions: m.Compactions, KeptDated: m.KeptDated, ReadZone: m.ReadZone}
+	core := manifestCore{Version: m.Version, Format: m.Format, Files: m.Files, BuiltAt: m.BuiltAt, SourcesReadAt: m.SourcesReadAt, Generation: m.Generation, Scope: m.Scope, Redacted: m.Redacted, RedactionRules: m.RedactionRules, ExportWatermarks: m.ExportWatermarks, ExportBoundary: m.ExportBoundary, ImportedRecords: m.ImportedRecords, RecordStrings: m.RecordStrings, IngestHealth: m.IngestHealth, IngestFiles: m.IngestFiles, ExcludeFingerprint: m.ExcludeFingerprint, ToolFingerprint: m.ToolFingerprint, Compactions: m.Compactions, KeptDated: m.KeptDated, ReadZone: m.ReadZone, Deferred: m.Deferred}
 	stampStore(dir, &core, m, wroteRecords)
 	if err := writeGobAtomic(filepath.Join(dir, "sessions.gob"), m.Sessions); err != nil {
 		return err

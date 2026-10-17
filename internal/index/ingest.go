@@ -90,6 +90,7 @@ func IngestFilesReport(dir string) map[string]FileIngest {
 func mergeIngestDiag(m *Manifest) {
 	reasons := sources.DiagReasons()
 	records := sources.DiagUnusableRecords()
+	foldDeferred(m, sources.DiagNoZstdPaths())
 	malformed, failed := sources.DiagSnapshot()
 	if m.IngestFiles == nil {
 		m.IngestFiles = map[string]FileIngest{}
@@ -618,6 +619,8 @@ func rebuild(dir string, harness string, scope string, files map[string]FileStat
 
 func rebuildWithTombstones(dir string, harness string, scope string, files map[string]FileState, progress io.Writer, dead map[string]bool) error {
 	defer readTo(files)()
+	defer sources.PinZstd()()
+	defer walkedThisPass(files)()
 	// This build's counts, not the process's: see writeSessionsWithSync (#1850).
 	beginPass()
 	emptied.Store(0)
@@ -3944,6 +3947,52 @@ var passParsed map[string]bool
 // go, or a permission blip stayed in doctor until a forced rebuild (#2015).
 var passRead map[string]bool
 
+// passWalked is the walk the pass in progress started from, copied before the
+// pass drops the files it could not read from that same map. Deferred needs
+// the state the walk saw for exactly those files (#5105). Nil outside a pass,
+// so a manifest write that is not one (sync, forget) keeps Deferred as is.
+var passWalked map[string]FileState
+
+// walkedThisPass records the walk a pass starts from, until the returned func
+// runs. A rebuild inside a pass keeps the outer walk, taken before the outer
+// pass changed anything.
+func walkedThisPass(files map[string]FileState) func() {
+	if passWalked != nil {
+		return func() {}
+	}
+	passWalked = maps.Clone(files)
+	return func() { passWalked = nil }
+}
+
+// foldDeferred updates the transcripts held as waiting for zstd. A file this
+// pass left unread for that reason is held with the state the walk saw; one
+// the index now holds, or the walk no longer lists, is let go. A file the pass
+// did not try again keeps its entry: nothing about it has changed.
+func foldDeferred(m *Manifest, noZstd map[string]bool) {
+	if passWalked == nil {
+		return
+	}
+	// A new map: m.Deferred may be shared with the cached manifest.
+	out := map[string]FileState{}
+	for p, f := range m.Deferred {
+		_, walked := passWalked[p]
+		_, held := m.Files[p]
+		if walked && !held {
+			out[p] = f
+		}
+	}
+	for p := range noZstd {
+		f, walked := passWalked[p]
+		if _, held := m.Files[p]; walked && !held {
+			out[p] = f
+		}
+	}
+	if len(out) == 0 {
+		out = nil
+	}
+	m.Deferred = out
+}
+
 // readThisPass records a file a pass opened and parsed.
 func readThisPass(files map[string]FileState) {
 	if passRead == nil {
@@ -3982,6 +4031,8 @@ func updateIndex(dir, harness, scope string, files map[string]FileState, force b
 
 func updateIndexOnce(dir, harness, scope string, files map[string]FileState, force bool, progress io.Writer) error {
 	defer readTo(files)()
+	defer sources.PinZstd()()
+	defer walkedThisPass(files)()
 	// Cleared here rather than beside the other two: this build counts what
 	// went away further down, before the incremental paths reset theirs, so a
 	// reset down there would zero the number this build is about to report

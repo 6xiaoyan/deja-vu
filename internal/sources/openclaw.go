@@ -189,6 +189,7 @@ func zstdDecoded(path, harness string) ([]byte, error) {
 	// passes. Keep the file out of the manifest so the first pass with zstd
 	// reads it (#5061).
 	if !ZstdAvailable() {
+		diagNoZstd(path)
 		return nil, fmt.Errorf("%s: %s: %w", harness, filepath.Base(path), errNoZstd)
 	}
 	raw, err := os.ReadFile(path)
