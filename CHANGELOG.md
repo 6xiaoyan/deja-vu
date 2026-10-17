@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `DEJA_THEME=dracula` paints the interactive screen in the Dracula palette, for terminals themed that way. `light` and `dark` work as before, and a name deja does not know still falls back to the terminal background. From @demrom (#5106).
 - `deja delete <id>` and `D` in the TUI erase a session from its agent and from deja's index, after asking; there is no undo. `--dry-run` lists the files. Claude Code, Codex, Cursor CLI, Gemini CLI, Qwen Code, Copilot CLI, Cline CLI, Kimi Code, Grok, dsh, pi, Senpi, OpenClaw and Antigravity are removed as files, opencode through `opencode session delete`. Running sessions, shared stores and unchecked agents are refused.
 - A guide on deleting Copilot CLI session history: find the session by the id in `session.start`, not the directory name, and what `copilot --resume` loses. From @beiryu (#4965).
 - A guide on deleting Qwen Code chat history: the chat file, its sub-agent logs, and what `qwen -r` loses. From @beiryu (#4966).

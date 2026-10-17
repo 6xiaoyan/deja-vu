@@ -189,20 +189,30 @@ func TestTUIReaderRoles(t *testing.T) {
 }
 
 func TestTUITheme(t *testing.T) {
-	defer setTheme(false)
-	for env, want := range map[[2]string]bool{
-		{"light", ""}: true, {"dark", "0;15"}: false, {"", "0;15"}: true, {"", "15;0"}: false, {"", ""}: false, {"", "0;default;7"}: true,
+	defer setTheme("dark")
+	for env, want := range map[[2]string]string{
+		{"light", ""}: "light", {"dark", "0;15"}: "dark", {"", "0;15"}: "light", {"", "15;0"}: "dark", {"", ""}: "dark",
+		{"", "0;default;7"}: "light", {"Dracula", "0;15"}: "dracula", {"solarized", "0;15"}: "light",
 	} {
 		t.Setenv("DEJA_THEME", env[0])
 		t.Setenv("COLORFGBG", env[1])
-		if got := lightTerminal(); got != want {
-			t.Errorf("lightTerminal(%v) = %v", env, got)
+		if got := terminalTheme(); got != want {
+			t.Errorf("terminalTheme(%v) = %q, want %q", env, got, want)
 		}
 	}
+	setTheme("dark")
 	dark := cBase
-	setTheme(true)
+	setTheme("light")
 	if cBase == dark {
 		t.Error("the light set replaces the colours")
+	}
+	setTheme("dracula")
+	if cBase != tui.Hex("#282a36") || cAcc != tui.Hex("#bd93f9") {
+		t.Error("dracula paints Dracula's background and purple")
+	}
+	setTheme("solarized")
+	if cBase != dark {
+		t.Error("an unknown theme falls back to dark")
 	}
 }
 
@@ -247,5 +257,18 @@ func TestTUIContinueRecentAndFold(t *testing.T) {
 	a.openContinue()
 	if ts := a.shownTargets(); ts[0].id != "kiro" || a.m.sel != 0 {
 		t.Errorf("the newest pick leads and is selected: %+v", ts[0])
+	}
+}
+
+// Without truecolor every colour rounds to the xterm-256 cube; two surfaces
+// that land on one entry make the selected card and the panels vanish.
+func TestThemeSurfacesStayApartIn256Colours(t *testing.T) {
+	for name, p := range palettes {
+		base := tui.To256(tui.Hex(p[0]))
+		for _, hex := range p[2:4] { // the card surface and the panels
+			if n := tui.To256(tui.Hex(hex)); n == base {
+				t.Errorf("%s: %s lands on the background's xterm %d", name, hex, n)
+			}
+		}
 	}
 }

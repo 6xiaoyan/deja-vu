@@ -21,14 +21,27 @@ var (
 	cMark tui.Color
 )
 
-func init() { setTheme(false) }
+func init() { setTheme("dark") }
 
-func setTheme(light bool) {
-	p := []string{"#1e1e2e", "#181825", "#26263a", "#313244", "#45475a", "#cdd6f4", "#a6adc8", "#7f849c", "#585b70",
-		"#cba6f7", "#f9e2af", "#a6e3a1", "#fab387", "#f38ba8", "#f9e2af"}
-	if light {
-		p = []string{"#eff1f5", "#e6e9ef", "#e4e6ee", "#dce0e8", "#bcc0cc", "#4c4f69", "#5c5f77", "#7c7f93", "#9ca0b0",
-			"#8839ef", "#df8e1d", "#40a02b", "#fe640b", "#d20f39", "#fe640b"}
+// palettes holds each theme's colours in the order setTheme assigns them.
+// dark and light are Catppuccin Mocha and Latte. dracula takes Dracula's
+// colours and its editor ports' background shades, with comment for muted
+// text; the card surface and faint text sit between them at Mocha's contrast,
+// far enough apart that each keeps its own xterm-256 entry.
+var palettes = map[string][]string{
+	"dark": {"#1e1e2e", "#181825", "#26263a", "#313244", "#45475a", "#cdd6f4", "#a6adc8", "#7f849c", "#585b70",
+		"#cba6f7", "#f9e2af", "#a6e3a1", "#fab387", "#f38ba8", "#f9e2af"},
+	"light": {"#eff1f5", "#e6e9ef", "#e4e6ee", "#dce0e8", "#bcc0cc", "#4c4f69", "#5c5f77", "#7c7f93", "#9ca0b0",
+		"#8839ef", "#df8e1d", "#40a02b", "#fe640b", "#d20f39", "#fe640b"},
+	"dracula": {"#282a36", "#21222c", "#313342", "#3a3d4e", "#44475a", "#f8f8f2", "#bfc3d9", "#6272a4", "#5a5e7e",
+		"#bd93f9", "#f1fa8c", "#50fa7b", "#ffb86c", "#ff5555", "#f1fa8c"},
+}
+
+// setTheme switches to the named palette; a name it does not know is dark.
+func setTheme(name string) {
+	p, ok := palettes[name]
+	if !ok {
+		p = palettes["dark"]
 	}
 	for i, c := range []*tui.Color{&cBase, &cMantle, &cSurf, &cSurf2, &cOver, &cText, &cSub, &cMuted, &cFaint,
 		&cAcc, &cYel, &cGrn, &cPeach, &cRed, &cMark} {
@@ -36,19 +49,18 @@ func setTheme(light bool) {
 	}
 }
 
-// lightTerminal reads the theme the reader asked for, then the background
+// terminalTheme reads the theme the reader asked for, then the background
 // the terminal reports through COLORFGBG ("fg;bg", 7 and 15 being light).
 // Unknown is dark, which is what most terminals are.
-func lightTerminal() bool {
-	switch strings.ToLower(os.Getenv("DEJA_THEME")) {
-	case "light":
-		return true
-	case "dark":
-		return false
+func terminalTheme() string {
+	if name := strings.ToLower(os.Getenv("DEJA_THEME")); palettes[name] != nil {
+		return name
 	}
 	parts := strings.Split(os.Getenv("COLORFGBG"), ";")
-	bg := parts[len(parts)-1]
-	return bg == "7" || bg == "15"
+	if bg := parts[len(parts)-1]; bg == "7" || bg == "15" {
+		return "light"
+	}
+	return "dark"
 }
 
 func agentColor(h string) tui.Color { return tui.Index256(harnesscolor.Index(h)) }

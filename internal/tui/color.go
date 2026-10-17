@@ -61,6 +61,9 @@ func DetectMode() Mode {
 
 var cubeLevels = [6]int{0, 95, 135, 175, 215, 255}
 
+// To256 is the xterm-256 entry a colour lands on without truecolor.
+func To256(c Color) int { return to256(c) }
+
 // to256 picks the nearest xterm-256 entry: the 6x6x6 cube or the grey ramp,
 // whichever lands closer.
 func to256(c Color) int {

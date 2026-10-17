@@ -158,7 +158,7 @@
 <tr><td><code>ctrl-k</code></td><td>Every command by name, including copy the session id (<code>i</code>), copy the project path (<code>p</code>) and forget the session (<code>F</code>), which asks first.</td></tr>
 <tr><td><code>ctrl-u</code>, <code>ctrl-w</code></td><td>Clear the box, drop a word. <code>esc</code> clears or goes back; <code>q</code> quits from the list.</td></tr>
 </tbody></table>
-<p>The mouse works too: click a card, double-click to open, scroll. <code>DEJA_THEME=light</code> or <code>dark</code> picks the palette when the terminal does not say. <code>DEJA_TUI=0</code> or <code>TERM=dumb</code> prints the text brief instead.</p>
+<p>The mouse works too: click a card, double-click to open, scroll. <code>DEJA_THEME=light</code> or <code>dark</code> picks the palette when the terminal does not say; <code>DEJA_THEME=dracula</code> paints it in Dracula. <code>DEJA_TUI=0</code> or <code>TERM=dumb</code> prints the text brief instead.</p>
 <h2>Commands</h2>
 <table><thead><tr><th>Command</th><th>Description</th></tr></thead><tbody>
 <tr><td><code>deja "query"</code></td><td>Search indexed history (<code>deja search "query"</code> is the same, for a query that starts with a dash). Filters: <code>--harness --project --since --role --session --limit --all --re --no-embed --json</code>. <code>--limit</code> takes 1–100; without it an exact match shows 15 hits (<code>--all</code> shows every one) and a ranked fallback shows its own window.</td></tr>

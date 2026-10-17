@@ -174,7 +174,7 @@ func newTUIApp(dir string, t *tui.Term) *tuiApp {
 		keptIDs: map[string]bool{},
 	}
 	a.p.mono = t != nil && t.Mode == tui.ModeMono
-	setTheme(lightTerminal())
+	setTheme(terminalTheme())
 	a.cwd = howCwd()
 	a.projects = howScope(a.cwd, "", false)
 	a.history, a.histAt = loadTUIHistory(dir), -1
