@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `deja promote` refuses a second id instead of promoting the last one named, so a mistyped first id no longer writes a note on another session. From @WynandVStaden (#5075).
 - `deja last` and `deja show` answer from the index while another deja holds its lock instead of waiting it out. A session too new for that index, like the one a session-start refresh is still reading, still waits for it. From @Sora-bluesky (#5058).
 - `deja aider --help` and `deja goose --help` print the tool's own help, as deja's help always said they would, instead of deja's page; `deja help aider` still shows deja's (#5060).
 - The security model, architecture notes, JSON reference and guides say what the code does where they had drifted: the hook launcher's lookup order, every surface the `<deja-recall>` frame covers, the injection log among the files deja writes, redaction on sync import and `origin` on every sync record, the search fallback order and its six tiers, `--limit` defaults, and that no installer wires `hook-plan` (#5060).

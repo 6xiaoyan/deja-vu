@@ -50,6 +50,23 @@ func TestPromoteWritesNoteWithProvenanceAndState(t *testing.T) {
 	}
 }
 
+func TestPromoteRefusesASecondIDPrefix(t *testing.T) {
+	dir := promoteFixture(t)
+	for _, args := range [][]string{{"nosuch", "sess1234"}, {"sess1234", "extra"}, {"sess1234", "--note", "x", "nosuch"}} {
+		err := runPromote(dir, args, &bytes.Buffer{})
+		if err == nil {
+			t.Fatalf("promote %q: want a refusal, got none", args)
+		}
+		first, second := args[0], args[len(args)-1]
+		if want := "promote takes one id-prefix — got \"" + first + "\" and \"" + second + "\""; err.Error() != want {
+			t.Fatalf("promote %q: error = %q, want %q", args, err, want)
+		}
+	}
+	if _, err := os.Stat(sources.NotesFile()); !os.IsNotExist(err) {
+		t.Fatalf("a refused promote wrote a note (stat err %v)", err)
+	}
+}
+
 func TestPromoteCorrectionAppends(t *testing.T) {
 	dir := promoteFixture(t)
 	if err := runPromote(dir, []string{"sess1234"}, &bytes.Buffer{}); err != nil {

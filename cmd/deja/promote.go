@@ -58,6 +58,9 @@ func runPromote(dir string, args []string, stdout io.Writer) error {
 			if strings.HasPrefix(args[i], "-") {
 				return unknownFlag("promote", args[i], promoteFlags)
 			}
+			if prefix != "" {
+				return fmt.Errorf("promote takes one id-prefix — got %q and %q", prefix, args[i])
+			}
 			prefix = args[i]
 		}
 	}
