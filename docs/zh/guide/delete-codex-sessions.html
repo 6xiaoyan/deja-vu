@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-Hans" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>怎么删除 Codex CLI 的会话 — deja-vu</title>
+<meta name="description" content="怎么删除 Codex CLI 的会话——删一次 rollout、删一天，或者删掉整个 ~/.codex/sessions——以及为什么 ~/.codex/history.jsonl 无论如何都留着你的提示词。">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/zh/guide/delete-codex-sessions.html">
+<link rel="alternate" hreflang="zh-Hans" href="https://vshulcz.github.io/deja-vu/zh/guide/delete-codex-sessions.html">
+<link rel="alternate" hreflang="en" href="https://vshulcz.github.io/deja-vu/guide/delete-codex-sessions.html">
+<link rel="alternate" hreflang="x-default" href="https://vshulcz.github.io/deja-vu/guide/delete-codex-sessions.html">
+<meta property="og:type" content="article">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:title" content="怎么删除 Codex CLI 的会话">
+<meta property="og:description" content="怎么删除 Codex CLI 的会话——删一次 rollout、删一天，或者删掉整个 ~/.codex/sessions——以及为什么 ~/.codex/history.jsonl 无论如何都留着你的提示词。">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/zh/guide/delete-codex-sessions.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="deja-vu — 给编程智能体的可搜索本地记忆">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<meta name="twitter:title" content="怎么删除 Codex CLI 的会话">
+<meta name="twitter:description" content="怎么删除 Codex CLI 的会话——删一次 rollout、删一天，或者删掉整个 ~/.codex/sessions——以及为什么 ~/.codex/history.jsonl 无论如何都留着你的提示词。">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../../assets/icon.svg">
+<link rel="stylesheet" href="../../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<link rel="apple-touch-icon" href="../../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "怎么删除 Codex CLI 的会话，以及会失去什么", "description": "怎么删除 Codex CLI 的会话——删一次 rollout、删一天，或者删掉整个 ~/.codex/sessions——以及为什么 ~/.codex/history.jsonl 无论如何都留着你的提示词。", "url": "https://vshulcz.github.io/deja-vu/zh/guide/delete-codex-sessions.html", "inLanguage": "zh-Hans", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/zh/guide/delete-codex-sessions.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-09-15", "dateModified": "2026-10-16"}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "deja-vu", "item": "https://vshulcz.github.io/deja-vu/"}, {"@type": "ListItem", "position": 2, "name": "删除 Codex 的会话", "item": "https://vshulcz.github.io/deja-vu/zh/guide/delete-codex-sessions.html"}]}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "怎么删除一个 Codex CLI 会话？", "acceptedAnswer": {"@type": "Answer", "text": "用它的 id 运行 codex delete，或者删掉它在 ~/.codex/sessions/YYYY/MM/DD/ 下的 rollout 文件；超过一周的 rollout 会被压缩成 rollout-*.jsonl.zst。sessions 目录是按日期分的，所以一天的工作就是一个目录，rm -rf ~/.codex/sessions 会删掉所有会话。提示词历史是另一个文件 ~/.codex/history.jsonl，不受影响。"}}, {"@type": "Question", "name": "Codex CLI 把会话存在哪里？", "acceptedAnswer": {"@type": "Answer", "text": "在 ${CODEX_HOME:-~/.codex} 之下：rollout 在 sessions/YYYY/MM/DD/rollout-*.jsonl，是只追加的 JSONL；提示词历史在 history.jsonl。Xcode 里的 Codex 用的是 ~/Library/Developer/Xcode/CodingAssistant/codex。"}}, {"@type": "Question", "name": "删掉一个 Codex rollout 会把提示词从历史里也删掉吗？", "acceptedAnswer": {"@type": "Answer", "text": "不会。history.jsonl 独立于 rollout 保存你的提示词，没有助手的回复，也没有项目元数据，所以一条提示词能比它所属的会话活得更久。想彻底删掉，就两个都删。"}}, {"@type": "Question", "name": "Codex CLI 会自己删旧会话吗？", "acceptedAnswer": {"@type": "Answer", "text": "没有像 Claude Code 的 cleanupPeriodDays 那样按计划清理；rollout 文件会一直留着，直到你手动删。"}}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../../"><img src="../../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../../">首页</a><a class="lnk" href="getting-started.html">文档</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../../">← deja-vu</a><div class="grp">中文指南</div>
+<a href="getting-started.html">快速开始</a>
+<a href="does-my-agent-remember.html">智能体记得之前的对话吗</a>
+<a href="forgetting.html">为什么会忘事</a>
+<a href="context-window-full.html">上下文窗口满了</a>
+<a href="where-sessions-are-stored.html">历史文件在哪里</a>
+<a href="codex-history.html">Codex 的会话历史</a>
+<a href="codex-resume-session.html">Codex 会话恢复</a>
+<a href="no-conversation-found-claude-code.html">找不到会话</a>
+<a href="delete-codex-sessions.html" aria-current="page">删除 Codex 的会话</a>
+<a href="delete-cursor-chat-history.html">删除 Cursor 的聊天记录</a>
+<a href="session-files-on-disk.html">会话文件怎么删</a>
+<a href="privacy.html">隐私</a>
+<a href="memory-for-claude-code.html">给 Claude Code 加记忆</a>
+<a href="memory-for-codex.html">给 Codex CLI 加记忆</a>
+<a href="memory-for-cursor.html">给 Cursor 加记忆</a>
+<a href="memory-for-dsh.html">给 DeepSeek Harness 加记忆</a>
+<a href="memory-for-kimi.html">给 Kimi Code 加记忆</a>
+<a href="memory-for-qwen.html">给 Qwen Code 加记忆</a>
+<div class="grp">English</div>
+<a href="../../guide/delete-codex-sessions.html">Delete Codex sessions</a>
+<a href="../../guide/codex-history.html">Codex history</a>
+<a href="../../guide/where-sessions-are-stored.html">Where history lives</a>
+<a href="../../guide/commands.html">CLI reference</a>
+<div class="grp">Reference</div>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/readme/README.zh.md">中文 README</a>
+<a href="../../registry/README.html">Format registry</a><a class="sidecat" href="../../"><img src="../../assets/icon-live.svg" width="46" height="46" alt=""><span>它记得，你就不必记</span></a></aside>
+<article>
+
+<h1>怎么删除 Codex CLI 的会话，以及会失去什么</h1>
+<p class="pagelede">它们是 <code>~/.codex/sessions</code> 下的 rollout 文件，一个会话一个，而提示词历史是另一个文件<span class="mins" data-mins></span></p>
+
+<p>Codex 会把每个会话在进行时写到磁盘上。存储位置是 <code>${CODEX_HOME:-~/.codex}</code>，里面有两样彼此独立的东西：rollout，也就是对话；以及 <code>history.jsonl</code>，也就是你敲过的提示词。删其中一个不会碰另一个——这正是人们容易弄错的地方。</p>
+
+<h2>怎么删除 Codex 的会话</h2>
+<p>现在的 Codex 有一个针对单个会话的命令 <code>codex delete &lt;id&gt;</code>，以及 <code>codex archive &lt;id&gt;</code>，把一个会话藏起来而不删除。除此之外，会话就是文件。路径按日期分，所以一天的工作就是一个目录；而超过一周的 rollout 已经被压缩成 <code>.jsonl.zst</code>，以 <code>.jsonl</code> 结尾的模式匹配不到它。</p>
+<pre># 有什么，最新在前
+ls -t ~/.codex/sessions/*/*/*/rollout-*.jsonl* | head
+
+# 一个会话
+rm ~/.codex/sessions/2026/09/15/rollout-*&lt;id&gt;.jsonl*
+
+# 一天
+rm -rf ~/.codex/sessions/2026/09/15
+
+# 所有会话，包括被 Codex 归档的
+rm -rf ~/.codex/sessions ~/.codex/archived_sessions
+
+# 你的提示词，上面的命令都碰不到
+rm ~/.codex/history.jsonl</pre>
+<p>如果设置了 <code>CODEX_HOME</code>，以上路径都跟着它走。在 Xcode 里跑的 Codex 有自己独立的一套，位于 <code>~/Library/Developer/Xcode/CodingAssistant/codex</code>，删掉命令行的会话不会动它。</p>
+
+<h2>一个 rollout 里有什么</h2>
+<p>JSON Lines，随会话进行不断追加。第一条记录是 <code>session_meta</code>，带着会话 id 和工作目录；其余是事件，事件的 payload 里有角色和内容。因为文件是在会话进行时追加的，被打断的会话最后一行可能是断的——读它的程序要能容忍这一点，<code>rm</code> 则无所谓。</p>
+<p>它是纯文本，而且是逐字的：命令打印进对话里的任何东西都在文件里。像对待你的 shell 历史一样对待这个目录。<a href="../../registry/codex.html">格式登记表</a>记录了每个字段。</p>
+
+<h2>你会失去什么</h2>
+<p>rollout 是之后任何对自己工作的搜索要读的东西——包括 <code>codex resume</code>，它列出的就是磁盘上有的东西。删掉它们，智能体做过什么的记录也就跟着没了：命令、它们的输出、以及那些编辑，没有一样能从摘要里还原。</p>
+<p>deja 会把这些文件连同这台机器上其他每个智能体的历史一起建索引，所以在 Codex 里做出的决定能回答在 Claude Code 或 Cursor 里提出的问题。已经索引过的会话，在文件没了之后仍然搜得到；只有 <code>deja forget</code> 会有意丢掉一个。在裸 <code>deja</code> 打开的界面里，被删掉的会话在 Deleted 标签下，按 <code>R</code> 会把它写回去，让 <code>codex resume</code> 重新打开它，带回的是对话，不包括工具调用。这是「删之前先建索引」的理由，不是「留着几个 GB」的理由。</p>
+
+<p><a href="codex-history.html">阅读和搜索 Codex 的历史</a> · <a href="where-sessions-are-stored.html">每个智能体把历史存在哪里</a> · <a href="session-files-on-disk.html">Claude Code 的同一个问题</a> · <a href="memory-for-codex.html">让 Codex 也能召回其余的</a></p>
+</article>
+</div>
+<footer>deja-vu 采用 MIT 许可，在你的机器上运行。<a href="https://github.com/vshulcz/deja-vu">GitHub 源码</a> · <a href="../../">首页</a></footer>
+</div>
+<script src="../../assets/guide.js" defer></script>
+</body>
+</html>

@@ -46,8 +46,13 @@
 <a href="getting-started.html">快速开始</a>
 <a href="does-my-agent-remember.html">智能体记得之前的对话吗</a>
 <a href="forgetting.html">为什么会忘事</a>
+<a href="context-window-full.html">上下文窗口满了</a>
 <a href="where-sessions-are-stored.html">历史文件在哪里</a>
 <a href="codex-history.html" aria-current="page">Codex 的会话历史</a>
+<a href="codex-resume-session.html">Codex 会话恢复</a>
+<a href="no-conversation-found-claude-code.html">找不到会话</a>
+<a href="delete-codex-sessions.html">删除 Codex 的会话</a>
+<a href="delete-cursor-chat-history.html">删除 Cursor 的聊天记录</a>
 <a href="session-files-on-disk.html">会话文件怎么删</a>
 <a href="privacy.html">隐私</a>
 <a href="memory-for-claude-code.html">给 Claude Code 加记忆</a>
@@ -90,7 +95,7 @@ codex resume --include-non-interactive   # 连 codex exec 跑的也算
 codex fork                   # 复制一个旧会话继续
 codex archive &lt;id&gt;           # 藏起来；codex unarchive 可以恢复
 codex delete &lt;id&gt;            # 永久删除</pre>
-<p>选择器显示标题和第一条消息，不往对话里面看，也只认 Codex。某个会话在它里面不见了，或者 resume 报出 <code>no rollout found</code>，见<a href="../../guide/codex-resume-session.html">Codex resume</a>。</p>
+<p>选择器显示标题和第一条消息，不往对话里面看，也只认 Codex。某个会话在它里面不见了，或者 resume 报出 <code>no rollout found</code>，见<a href="codex-resume-session.html">Codex resume</a>。</p>
 
 <h2>不用任何工具去读</h2>
 <p>最近几次会话，以及它们是在哪里跑的：</p>
@@ -127,7 +132,7 @@ deja view                                              # 全部内容合成一�
 deja sync ssh devbox --both # 也把它的会话拉过来</pre>
 <p>送过去的东西，在那边用 <code>deja</code> 就能搜。它不会把会话加进那台机器的 resume 选择器。<a href="../../guide/sync-across-machines.html">跨机器同步</a>有更多细节。</p>
 
-<p><a href="../../guide/delete-codex-sessions.html">删除 Codex 的会话</a> · <a href="where-sessions-are-stored.html">每个智能体把历史存在哪里</a> · <a href="resume-a-session.html">接着一次会话继续</a></p>
+<p><a href="delete-codex-sessions.html">删除 Codex 的会话</a> · <a href="where-sessions-are-stored.html">每个智能体把历史存在哪里</a> · <a href="resume-a-session.html">接着一次会话继续</a></p>
 </article>
 </div>
 <footer>deja-vu 采用 MIT 许可，在你的机器上运行。<a href="https://github.com/vshulcz/deja-vu">GitHub 源码</a> · <a href="../../">首页</a></footer>

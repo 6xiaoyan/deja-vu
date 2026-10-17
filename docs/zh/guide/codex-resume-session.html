@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-Hans" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codex resume 会话：列出、查找和修复报错 — deja-vu</title>
+<meta name="description" content="codex resume、--all、--last 和 exec resume：为什么某个会话不在选择器里，以及 no rollout found 和 is archived 这两个报错。">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/zh/guide/codex-resume-session.html">
+<link rel="alternate" hreflang="zh-Hans" href="https://vshulcz.github.io/deja-vu/zh/guide/codex-resume-session.html">
+<link rel="alternate" hreflang="en" href="https://vshulcz.github.io/deja-vu/guide/codex-resume-session.html">
+<link rel="alternate" hreflang="x-default" href="https://vshulcz.github.io/deja-vu/guide/codex-resume-session.html">
+<meta property="og:type" content="article">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:title" content="Codex resume 会话：列出、查找和修复报错">
+<meta property="og:description" content="codex resume、--all、--last 和 exec resume：为什么某个会话不在选择器里，以及 no rollout found 和 is archived 这两个报错。">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/zh/guide/codex-resume-session.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="deja-vu — 给编程智能体的可搜索本地记忆">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<meta name="twitter:title" content="Codex resume 会话：列出、查找和修复报错">
+<meta name="twitter:description" content="codex resume、--all、--last 和 exec resume：为什么某个会话不在选择器里，以及 no rollout found 和 is archived 这两个报错。">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../../assets/icon.svg">
+<link rel="stylesheet" href="../../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<link rel="apple-touch-icon" href="../../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Codex resume：找回会话，以及它不在时的报错", "description": "codex resume、--all、--last 和 exec resume：为什么某个会话不在选择器里，以及 no rollout found 和 is archived 这两个报错。", "url": "https://vshulcz.github.io/deja-vu/zh/guide/codex-resume-session.html", "inLanguage": "zh-Hans", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/zh/guide/codex-resume-session.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-10-14", "dateModified": "2026-10-16"}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "deja-vu", "item": "https://vshulcz.github.io/deja-vu/"}, {"@type": "ListItem", "position": 2, "name": "Codex 会话恢复", "item": "https://vshulcz.github.io/deja-vu/zh/guide/codex-resume-session.html"}]}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "怎么恢复之前的一个 Codex CLI 会话？", "acceptedAnswer": {"@type": "Answer", "text": "codex resume 打开一个选择器，列出在当前目录里开过的会话；codex resume --all 显示所有目录，codex resume --last 跳过选择器，codex resume <id-or-name> 重新打开一个会话。脚本里用 codex exec resume <id> \"prompt\"。"}}, {"@type": "Question", "name": "为什么我的 Codex 会话不在 codex resume 里？", "acceptedAnswer": {"@type": "Answer", "text": "选择器只显示在当前目录里开过的会话（用 --all），略过 codex exec 跑的（用 --include-non-interactive），隐藏已归档的（codex unarchive <id>），而且只列出这台机器上的会话。"}}, {"@type": "Question", "name": "Codex 里的 \"no rollout found for thread id\" 是什么意思？", "acceptedAnswer": {"@type": "Answer", "text": "Codex 在 ${CODEX_HOME:-~/.codex}/sessions 下没找到那个 id 的会话文件。要么 id 错了，要么会话被删了，要么 CODEX_HOME 指向了另一套目录。超过七天的 rollout 会压缩成 .jsonl.zst，所以要按 rollout-*<id>* 找，而不是 *.jsonl。"}}, {"@type": "Question", "name": "能不能在另一台电脑上恢复 Codex 会话？", "acceptedAnswer": {"@type": "Answer", "text": "可以，把它的 rollout 文件复制到那台机器 CODEX_HOME 下同样的 sessions/YYYY/MM/DD 路径，再按 id 恢复。Codex 自己不同步会话。"}}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../../"><img src="../../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../../">首页</a><a class="lnk" href="getting-started.html">文档</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../../">← deja-vu</a><div class="grp">中文指南</div>
+<a href="getting-started.html">快速开始</a>
+<a href="does-my-agent-remember.html">智能体记得之前的对话吗</a>
+<a href="forgetting.html">为什么会忘事</a>
+<a href="context-window-full.html">上下文窗口满了</a>
+<a href="where-sessions-are-stored.html">历史文件在哪里</a>
+<a href="codex-history.html">Codex 的会话历史</a>
+<a href="codex-resume-session.html" aria-current="page">Codex 会话恢复</a>
+<a href="no-conversation-found-claude-code.html">找不到会话</a>
+<a href="delete-codex-sessions.html">删除 Codex 的会话</a>
+<a href="delete-cursor-chat-history.html">删除 Cursor 的聊天记录</a>
+<a href="session-files-on-disk.html">会话文件怎么删</a>
+<a href="privacy.html">隐私</a>
+<a href="memory-for-claude-code.html">给 Claude Code 加记忆</a>
+<a href="memory-for-codex.html">给 Codex CLI 加记忆</a>
+<a href="memory-for-cursor.html">给 Cursor 加记忆</a>
+<a href="memory-for-dsh.html">给 DeepSeek Harness 加记忆</a>
+<a href="memory-for-kimi.html">给 Kimi Code 加记忆</a>
+<a href="memory-for-qwen.html">给 Qwen Code 加记忆</a>
+<div class="grp">English</div>
+<a href="../../guide/codex-resume-session.html">Codex resume</a>
+<a href="../../guide/codex-history.html">Codex history</a>
+<a href="../../guide/resume-a-session.html">Resuming a session</a>
+<a href="../../guide/commands.html">CLI reference</a>
+<div class="grp">Reference</div>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/readme/README.zh.md">中文 README</a>
+<a href="../../registry/README.html">Format registry</a><a class="sidecat" href="../../"><img src="../../assets/icon-live.svg" width="46" height="46" alt=""><span>它记得，你就不必记</span></a></aside>
+<article>
+
+<h1>Codex resume：找回会话，以及它不在时的报错</h1>
+<p class="pagelede">选择器按目录过滤、略过 <code>codex exec</code> 和已归档的会话，也只恢复这块磁盘上有的东西<span class="mins" data-mins></span></p>
+
+<p><code>codex resume</code> 连同整段对话重新打开一个过去的 Codex CLI 会话。多数时候你要找的会话就在选择器里。不在的时候，原因就那么几个，每个都有自己的解法。下面的命令和报错来自 codex-cli 0.149.0，跑在一个一次性的 <code>CODEX_HOME</code> 上。</p>
+
+<h2>命令</h2>
+<pre>codex resume                            # 选择器：在这个目录里开过的会话
+codex resume --all                      # 所有目录，带一列 CWD
+codex resume --last                     # 最近的一个，不经过选择器
+codex resume &lt;id-or-name&gt;               # 按 UUID 或名字恢复一个会话
+codex resume --include-non-interactive  # 连 codex exec 跑的也算
+codex fork                              # 复制一个旧会话继续
+codex exec resume &lt;id&gt; "next step"      # 不用 TUI 的恢复，给脚本用</pre>
+<p>参数能被解析成 UUID 时，UUID 优先于名字。</p>
+
+<h2>会话不在选择器里</h2>
+<ul>
+<li><b>它是在另一个目录里跑的。</b>选择器显示的是在你当前所在目录开过的会话。<code>codex resume --all</code> 会列出全部。按 id 恢复在哪个目录都行：测试里，一个在某个项目里开的会话，从另一个项目按 id 恢复成功了。</li>
+<li><b>它是一次 <code>codex exec</code> 运行。</b>非交互式会话不会出现在选择器里，也不会被 <code>--last</code> 选中。加上 <code>--include-non-interactive</code>。</li>
+<li><b>它被归档了。</b><code>codex archive</code> 把一个会话从选择器里藏起来。<code>codex unarchive &lt;id&gt;</code> 把它放回来。</li>
+<li><b>它在另一台机器上。</b>会话是本地文件，没有任何同步。见下文。</li>
+</ul>
+
+<h2>那些报错</h2>
+<p>已归档的会话会告诉你该怎么做：</p>
+<pre>$ codex exec resume 01a0775d-a98d-7500-b4b5-943a1f3a35e3 "go on"
+Error: thread/resume: thread/resume failed: session 01a0775d-a98d-7500-b4b5-943a1f3a35e3 is archived. Run `codex unarchive 01a0775d-a98d-7500-b4b5-943a1f3a35e3` to unarchive it first. (code -32600)</pre>
+<p>而完全没有文件的会话不会：</p>
+<pre>$ codex exec resume 3f2a9c1e-0000-4000-8000-000000000000 "go on"
+Error: thread/resume: thread/resume failed: no rollout found for thread id 3f2a9c1e-0000-4000-8000-000000000000 (code -32600)</pre>
+<p>rollout 就是会话文件，位于 <code>${CODEX_HOME:-~/.codex}</code> 下的 <code>sessions/YYYY/MM/DD/rollout-&lt;time&gt;-&lt;id&gt;.jsonl</code>。没有 rollout 意味着三件事之一：id 错了；会话被 <code>codex delete</code> 或 <code>rm</code> 删掉了；或者这个 shell 的 <code>CODEX_HOME</code> 指向的是另一套目录，而不是当初写它的那套。检查一下：</p>
+<pre>echo "${CODEX_HOME:-$HOME/.codex}"
+find "${CODEX_HOME:-$HOME/.codex}" -name "rollout-*&lt;id&gt;*"</pre>
+<p><code>find</code> 的匹配式很关键：七天之后 Codex 会把 rollout 压缩成 <code>rollout-….jsonl.zst</code>，所以按 <code>*.jsonl</code> 搜会漏掉每一个超过一周的会话。两种形式 Codex 都能恢复。</p>
+<p>还有一个和会话本身无关的：<code>codex resume</code> 是全屏选择器，所以在管道、CI 任务或者智能体自己的 shell 里，它会以 <code>Error: stdin is not a terminal</code> 停下。那种场合用 <code>codex exec resume &lt;id&gt; "prompt"</code>。</p>
+
+<h2>在另一台机器上恢复</h2>
+<p>没有同步。把一个 rollout 复制到另一台机器 <code>CODEX_HOME</code> 下的相同路径，就够按 id 恢复它；测试里，一个只有那个复制文件的干净 <code>CODEX_HOME</code> 成功恢复了它：</p>
+<pre>scp laptop:.codex/sessions/2026/09/06/rollout-*01a0775d-a98d-7500-b4b5-943a1f3a35e3.jsonl \
+    ~/.codex/sessions/2026/09/06/
+codex resume 01a0775d-a98d-7500-b4b5-943a1f3a35e3</pre>
+<p>rollout 记录着会话当时在哪个目录里跑，选择器又按它过滤，所以项目在那边换了路径时，用 <code>--all</code> 或者直接用 id。</p>
+
+<h2>只记得内容，怎么找到 id</h2>
+<p>选择器显示标题和第一条消息；它不搜索对话内容，也只认 Codex。<a href="https://github.com/vshulcz/deja-vu">deja</a> 给 rollout 建索引，压缩过的、归档过的都算在内，和这台机器上其他每个智能体的历史放在一起，并打印出重新打开一个会话的命令：</p>
+<pre>deja --harness codex "the flaky retry in the uploader"   # 排好序的命中，每条带会话 id
+deja resume &lt;id&gt;                                        # 能重新打开它的 codex resume 命令
+deja resume &lt;id&gt; --write-back                           # 被删掉的会话：先把 rollout 写回去</pre>
+<p><code>--write-back</code> 是给那种「deja 索引过、之后 Codex 弄丢了文件」的会话用的。它会根据 deja 留下的内容写出一份 rollout，也就是对话的来回，并且需要知道会话当时跑在哪个目录；找不到时它会直说，而不是写出一份 Codex 会列错地方的 rollout。工具调用及其输出只留在 deja 里。安装：</p>
+<pre>curl -fsSL https://raw.githubusercontent.com/vshulcz/deja-vu/main/install.sh | sh
+deja install --auto</pre>
+<p>第一次建索引会读取磁盘上已有的历史。建索引和检索都在本地。</p>
+
+<p><a href="codex-history.html">Codex CLI 的会话历史</a> · <a href="delete-codex-sessions.html">删除 Codex 的会话</a> · <a href="resume-a-session.html">在任意智能体里恢复一次会话</a> · <a href="../../guide/sync-across-machines.html">跨机器同步</a></p>
+</article>
+</div>
+<footer>deja-vu 采用 MIT 许可，在你的机器上运行。<a href="https://github.com/vshulcz/deja-vu">GitHub 源码</a> · <a href="../../">首页</a></footer>
+</div>
+<script src="../../assets/guide.js" defer></script>
+</body>
+</html>

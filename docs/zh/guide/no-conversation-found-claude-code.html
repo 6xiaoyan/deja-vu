@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-Hans" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code：No conversation found with session ID — deja-vu</title>
+<meta name="description" content="claude --resume 在 ~/.claude/projects 下没找到会话文件。五种原因，在 2.1.295 上复现，怎么找到那个文件，以及怎么把会话找回来。">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/zh/guide/no-conversation-found-claude-code.html">
+<link rel="alternate" hreflang="zh-Hans" href="https://vshulcz.github.io/deja-vu/zh/guide/no-conversation-found-claude-code.html">
+<link rel="alternate" hreflang="en" href="https://vshulcz.github.io/deja-vu/guide/no-conversation-found-claude-code.html">
+<link rel="alternate" hreflang="x-default" href="https://vshulcz.github.io/deja-vu/guide/no-conversation-found-claude-code.html">
+<meta property="og:type" content="article">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:title" content="Claude Code：No conversation found with session ID">
+<meta property="og:description" content="claude --resume 在 ~/.claude/projects 下没找到会话文件。五种原因，在 2.1.295 上复现，怎么找到那个文件，以及怎么把会话找回来。">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/zh/guide/no-conversation-found-claude-code.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="deja-vu — 给编程智能体的可搜索本地记忆">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<meta name="twitter:title" content="Claude Code：No conversation found with session ID">
+<meta name="twitter:description" content="claude --resume 在 ~/.claude/projects 下没找到会话文件。五种原因，在 2.1.295 上复现，怎么找到那个文件，以及怎么把会话找回来。">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../../assets/icon.svg">
+<link rel="stylesheet" href="../../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<link rel="apple-touch-icon" href="../../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "No conversation found with session ID：Claude Code 在告诉你什么", "description": "claude --resume 在 ~/.claude/projects 下没找到会话文件。五种原因，在 2.1.295 上复现，怎么找到那个文件，以及怎么把会话找回来。", "url": "https://vshulcz.github.io/deja-vu/zh/guide/no-conversation-found-claude-code.html", "inLanguage": "zh-Hans", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/zh/guide/no-conversation-found-claude-code.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-10-14", "dateModified": "2026-10-16"}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "deja-vu", "item": "https://vshulcz.github.io/deja-vu/"}, {"@type": "ListItem", "position": 2, "name": "找不到会话", "item": "https://vshulcz.github.io/deja-vu/zh/guide/no-conversation-found-claude-code.html"}]}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Claude Code 里的 \"No conversation found with session ID\" 是什么意思？", "acceptedAnswer": {"@type": "Answer", "text": "claude --resume <id> 会在 ~/.claude/projects（或 $CLAUDE_CONFIG_DIR/projects）下找 <id>.jsonl，结果没找到，或者只找到一个里面没有消息的文件。常见原因：30 天的 cleanupPeriodDays 清理把它删了；被手动或 claude project purge 删了；生效的是另一个 CLAUDE_CONFIG_DIR；或者会话是 headless 客户端写到 <config>/transcripts 的。"}}, {"@type": "Question", "name": "按 id 恢复 Claude Code 会话需要待在项目目录里吗？", "acceptedAnswer": {"@type": "Answer", "text": "现在的版本不需要。在 Claude Code 2.1.295 上，按 id 恢复会搜 ~/.claude/projects 下的每一个项目目录。而不带 id 的 claude --resume 给出的选择器只列出当前目录的会话。"}}, {"@type": "Question", "name": "怎么找到某个 Claude Code 会话 id 对应的文件？", "acceptedAnswer": {"@type": "Answer", "text": "find ~/.claude -name '<session-id>.jsonl' -ls。如果它在 transcripts/ 下，就移到 ~/.claude/projects 下任意一个目录，再按 id 恢复。如果在另一个配置目录下，就用那个 CLAUDE_CONFIG_DIR 恢复。如果什么都没找到，文件就没了。"}}, {"@type": "Question", "name": "Claude Code 会话的文件被删掉之后还能恢复吗？", "acceptedAnswer": {"@type": "Answer", "text": "Claude Code 自己不能，它没有归档。删除之前做的备份可以，事先读过那个文件的索引也可以：deja 会保留它索引过的会话，deja resume <id> --write-back 会把对话写回 claude --resume 能找到的地方。"}}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../../"><img src="../../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../../">首页</a><a class="lnk" href="getting-started.html">文档</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../../">← deja-vu</a><div class="grp">中文指南</div>
+<a href="getting-started.html">快速开始</a>
+<a href="does-my-agent-remember.html">智能体记得之前的对话吗</a>
+<a href="forgetting.html">为什么会忘事</a>
+<a href="context-window-full.html">上下文窗口满了</a>
+<a href="where-sessions-are-stored.html">历史文件在哪里</a>
+<a href="codex-history.html">Codex 的会话历史</a>
+<a href="codex-resume-session.html">Codex 会话恢复</a>
+<a href="no-conversation-found-claude-code.html" aria-current="page">找不到会话</a>
+<a href="delete-codex-sessions.html">删除 Codex 的会话</a>
+<a href="delete-cursor-chat-history.html">删除 Cursor 的聊天记录</a>
+<a href="session-files-on-disk.html">会话文件怎么删</a>
+<a href="privacy.html">隐私</a>
+<a href="memory-for-claude-code.html">给 Claude Code 加记忆</a>
+<a href="memory-for-codex.html">给 Codex CLI 加记忆</a>
+<a href="memory-for-cursor.html">给 Cursor 加记忆</a>
+<a href="memory-for-dsh.html">给 DeepSeek Harness 加记忆</a>
+<a href="memory-for-kimi.html">给 Kimi Code 加记忆</a>
+<a href="memory-for-qwen.html">给 Qwen Code 加记忆</a>
+<div class="grp">English</div>
+<a href="../../guide/no-conversation-found-claude-code.html">No conversation found</a>
+<a href="../../guide/recover-a-deleted-session.html">Recover a deleted session</a>
+<a href="../../guide/session-files-on-disk.html">Session files on disk</a>
+<a href="../../guide/commands.html">CLI reference</a>
+<div class="grp">Reference</div>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/readme/README.zh.md">中文 README</a>
+<a href="../../registry/README.html">Format registry</a><a class="sidecat" href="../../"><img src="../../assets/icon-live.svg" width="46" height="46" alt=""><span>它记得，你就不必记</span></a></aside>
+<article>
+
+<h1>No conversation found with session ID：Claude Code 在告诉你什么</h1>
+<p class="pagelede">那个 id 的文件不在 <code>claude --resume</code> 找的地方，而出现这种情况的原因有五种<span class="mins" data-mins></span></p>
+
+<p>完整的消息就是一行：</p>
+<pre>$ claude --resume 7b1d2c3e-1111-4222-8333-444455556666
+No conversation found with session ID: 7b1d2c3e-1111-4222-8333-444455556666</pre>
+<p>Claude Code 把每段对话存成一个文件 <code>&lt;session-id&gt;.jsonl</code>，放在 <code>~/.claude/projects</code> 下按项目分的目录里。按 id 恢复就是找到那个文件。这个报错说的是它一个都没找到，或者找到的那个里面没有对话。它绝不意味着会话存在 Claude Code 忘了的地方：列表背后没有数据库，只有那些文件。</p>
+<p>下面的内容都在 Claude Code 2.1.295 上用一个一次性的 <code>CLAUDE_CONFIG_DIR</code> 复现过。</p>
+
+<h2>它不是什么：目录不对</h2>
+<p>常见的建议是 <code>cd</code> 到会话当初跑的项目里。对按 id 恢复来说，在当前版本上这并不重要：查找会搜 <code>~/.claude/projects</code> 下的每一个项目目录，测试里一个在某个仓库里开的会话，从另一个仓库按 id 恢复成功了。交互式选择器不一样，也就是不带 id 的 <code>claude --resume</code>：它列出你当前所在目录的会话，所以一个被改名或移动过的项目，它的会话不在列表里，但按 id 仍然有用。</p>
+
+<h2>五种原因</h2>
+<ol>
+<li><b>文件被清理了。</b><code>~/.claude/settings.json</code> 里的 <code>cleanupPeriodDays</code> 默认是 30 天，Claude Code 会删除比这更旧的转录，而且不说一声。上个月笔记里记下的一个 id，是撞上这个报错最常见的方式。<a href="session-files-on-disk.html">清理是怎么工作的</a>。</li>
+<li><b>文件被删了。</b>可能是手动删的，可能是 <code>claude project purge</code>，也可能是一个删掉旧 <code>.jsonl</code> 文件的清理脚本。</li>
+<li><b>配置目录不一样。</b>设置了 <code>CLAUDE_CONFIG_DIR</code> 之后，Claude Code 读的是 <code>$CLAUDE_CONFIG_DIR/projects</code>，完全不看 <code>~/.claude</code> 下的东西。一个 shell、一个容器或者一个 IDE 任务，如果它的设置和当初写会话的那个不同，那么来自另一套目录的每个 id 都会得到这个报错。</li>
+<li><b>会话是 headless 写的。</b>由 SDK 驱动的客户端和 headless 客户端写出的会话，可能落在 <code>&lt;config&gt;/transcripts/</code> 而不是 <code>projects/</code>。放在那里的文件 <code>--resume</code> 找不到；测试里它给出的正是这条消息，直到它被移到 <code>projects/</code> 下。</li>
+<li><b>文件里没有对话。</b>一个空的 <code>.jsonl</code>，或者只有一个摘要行、没有消息的，即使文件明明白白就在那里，也会给出同样的报错。</li>
+</ol>
+<p>差一点的情况会打印别的东西：带 <code>-p</code> 时，短的 id 前缀会被拒绝，提示 <code>--resume requires a valid session ID or session title</code>，因为 <code>claude -p --resume</code> 要的是一个完整的 UUID 或者会话标题，不是前缀。</p>
+<p>驱动 Claude Code 的程序，比如 Agent SDK 或者编辑器扩展，底层跑的是同一个 CLI，所以当这条消息作为一个更长报错的一部分出现时，原因和上面是同一套。</p>
+
+<h2>找到那个文件</h2>
+<pre># 它是不是在默认目录下的某处，包括 transcripts/
+find ~/.claude -name '&lt;session-id&gt;.jsonl' -ls
+
+# 这个 shell 用的是哪个配置目录
+echo "${CLAUDE_CONFIG_DIR:-~/.claude}"
+
+# 某个 id 在另一个文件里被提到，比如子智能体或改过名的副本
+grep -rl '&lt;session-id&gt;' ~/.claude 2&gt;/dev/null</pre>
+<p>如果 <code>find</code> 列出的文件大小是零，或者只有几百字节，那就是第 5 种，没什么可恢复的。如果它在 <code>transcripts/</code> 下，就把它移进任意一个项目目录，然后按 id 恢复：</p>
+<pre>mv ~/.claude/transcripts/&lt;session-id&gt;.jsonl ~/.claude/projects/&lt;project-dir&gt;/
+claude --resume &lt;session-id&gt;</pre>
+<p>如果它在另一个配置目录下，就用那个 <code>CLAUDE_CONFIG_DIR</code> 运行 <code>claude --resume</code>，或者把文件复制过去。如果 <code>find</code> 什么都没打印，文件就没了：在清理之前做的时间机器快照或其他快照，是 Claude Code 自己唯一还能用的副本。</p>
+
+<h2>让它别再发生</h2>
+<p>把保留期调长，清理就不会再拿走你还在引用的会话：</p>
+<pre># ~/.claude/settings.json
+{ "cleanupPeriodDays": 3650 }</pre>
+<p>这能解决第 1 种原因。对已经没了的会话没用，对其他几种也没用。</p>
+
+<h2>文件已经没了的时候</h2>
+<p>在文件还在时建好的索引，是那次清理之后唯一活下来的副本。<a href="https://github.com/vshulcz/deja-vu">deja</a> 会读这台机器上每一个 Claude Code 转录，它读过的会话在 Claude Code 删掉文件之后仍然留在索引里。按内容找到它，再写回 <code>claude --resume</code> 会看的地方：</p>
+<pre>deja "the migration that broke the staging build"   # 命中里带着会话 id
+deja show &lt;id&gt;                                      # 读 deja 留下的那段对话
+deja resume &lt;id&gt; --write-back                       # 写回 ~/.claude/projects，并打印恢复命令</pre>
+<p>写出来的文件里是对话，也就是用户和助手的来回；工具调用及其输出仍然只留在 deja 里。裸 <code>deja</code> 打开的界面里，Deleted 标签列出每一个被智能体删掉、而 deja 还留着的会话，对一个按 <code>R</code> 效果相同。对 deja 从没读过的会话，这些都帮不上忙，所以它得在清理发生之前就位：</p>
+<pre>curl -fsSL https://raw.githubusercontent.com/vshulcz/deja-vu/main/install.sh | sh
+deja install --auto</pre>
+<p>第一次建索引会读取磁盘上已有的历史，所以它覆盖你现在手上的这些会话。建索引和检索都在本地。</p>
+
+<p><a href="recover-a-deleted-session.html">找回被删掉的会话</a> · <a href="session-files-on-disk.html">删除 Claude Code 的会话</a> · <a href="resume-a-session.html">接着昨天的那次会话继续</a></p>
+</article>
+</div>
+<footer>deja-vu 采用 MIT 许可，在你的机器上运行。<a href="https://github.com/vshulcz/deja-vu">GitHub 源码</a> · <a href="../../">首页</a></footer>
+</div>
+<script src="../../assets/guide.js" defer></script>
+</body>
+</html>

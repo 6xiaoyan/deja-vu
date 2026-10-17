@@ -27,7 +27,6 @@ Run `deja` with no arguments in a terminal and it opens a full-screen search ove
 - [Delete Continue session history](https://vshulcz.github.io/deja-vu/guide/delete-continue-session-history.html): one JSON file per session plus a sessions.json list the history view reads; remove the entry with the file, or the session stays listed and cannot be deleted from Continue
 - [Delete old Claude Code sessions](https://vshulcz.github.io/deja-vu/guide/delete-old-claude-sessions.html): `find ~/.claude/projects -mtime +30 -delete` or `cleanupPeriodDays`, and why age frees far less disk than size
 - [Delete Codex CLI sessions](https://vshulcz.github.io/deja-vu/guide/delete-codex-sessions.html): one rollout, one day, or all of ~/.codex/sessions, and why ~/.codex/history.jsonl keeps your prompts regardless
-- [Delete TRAE CLI sessions](https://vshulcz.github.io/deja-vu/guide/delete-trae-sessions.html): one rollout, one day, or all of ~/.trae/cli/sessions, and why an archived session and history.jsonl survive it
 - [Delete Cursor chat history](https://vshulcz.github.io/deja-vu/guide/delete-cursor-chat-history.html): where the chats live in state.vscdb, why deleting the file resets more than chats, and what the CLI writes separately
 - [Cursor state.vscdb too large](https://vshulcz.github.io/deja-vu/guide/cursor-state-vscdb-too-large.html): which chats fill a 30–125 GB state.vscdb, shrinking it safest first, and keeping the chats you delete searchable
 - [Delete Gemini CLI chat history](https://vshulcz.github.io/deja-vu/guide/delete-gemini-cli-history.html): chats under ~/.gemini/tmp, mapping a project id back to a directory, and what the prompt log keeps
@@ -65,6 +64,11 @@ Run `deja` with no arguments in a terminal and it opens a full-screen search ove
 - [上下文丢了，怎么找回来](https://vshulcz.github.io/deja-vu/zh/guide/lost-context.html)：崩溃、清空或重启之后，会话记录还在，怎么把工作找回来
 - [历史文件在哪里](https://vshulcz.github.io/deja-vu/zh/guide/where-sessions-are-stored.html)：四十二个智能体各自把会话写在磁盘的哪里，用什么格式
 - [Codex 的会话历史](https://vshulcz.github.io/deja-vu/zh/guide/codex-history.html)：Codex 把会话放在哪里、一周之后 grep 漏掉的 .jsonl.zst、jq 和 sqlite3 的读法，以及搜索和同步
+- [删除 Codex 的会话](https://vshulcz.github.io/deja-vu/zh/guide/delete-codex-sessions.html)：删一次 rollout、删一天或删掉整个 ~/.codex/sessions，以及为什么 history.jsonl 里的提示词不受影响
+- [删除 Cursor 的聊天记录](https://vshulcz.github.io/deja-vu/zh/guide/delete-cursor-chat-history.html)：聊天是 state.vscdb 里的行，删掉整个文件会重置的不只是聊天，命令行转录另存一处
+- [Codex 会话恢复](https://vshulcz.github.io/deja-vu/zh/guide/codex-resume-session.html)：codex resume、--all、--last 与 exec resume，会话不在选择器里的原因，以及 no rollout found 和 is archived
+- [找不到会话](https://vshulcz.github.io/deja-vu/zh/guide/no-conversation-found-claude-code.html)：claude --resume 报 No conversation found with session ID 的五种原因、怎么定位文件，以及文件已经没了怎么办
+- [上下文窗口满了](https://vshulcz.github.io/deja-vu/zh/guide/context-window-full.html)：压缩实测保留了 77% 的决定和 0.2% 的命令，与其为不断增长的窗口付账，不如按需取回
 - [会话文件怎么删](https://vshulcz.github.io/deja-vu/zh/guide/session-files-on-disk.html)：Claude Code 的会话文件怎么删、能占多大、删掉之后失去什么
 - [找回被删掉的会话](https://vshulcz.github.io/deja-vu/zh/guide/recover-a-deleted-session.html)：claude --resume 里找不到那次会话时，四种原因里有三种不是删除，真正还能找回的是什么
 - [找回解决问题的那次会话](https://vshulcz.github.io/deja-vu/zh/guide/find-a-session.html)：按记得的词在所有智能体里同时搜历史，然后继续那次对话

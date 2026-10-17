@@ -376,7 +376,7 @@ rm -rf ~/.cache/deja ~/.local/share/deja ~/.config/deja
 - [编码智能体记得之前的对话吗？](https://vshulcz.github.io/deja-vu/guide/does-my-agent-remember.html)——每个智能体在会话之间留下了什么，又丢掉了什么
 - [磁盘上的会话文件](https://vshulcz.github.io/deja-vu/guide/session-files-on-disk.html)——`~/.claude/projects` 会长到多大，删掉要付出什么代价
 - [智能体把你刚才的上下文弄丢了](https://vshulcz.github.io/deja-vu/guide/lost-context.html)——崩溃之后、清空之后，或者会话回来时空空如也
-- [上下文窗口满了](https://vshulcz.github.io/deja-vu/guide/context-window-full.html)——压缩到底保住了什么，实测数据，以及可以换成什么做法
+- [上下文窗口满了（中文）](https://vshulcz.github.io/deja-vu/zh/guide/context-window-full.html)——压缩到底保住了什么，实测数据，以及可以换成什么做法
 - [接着昨天的会话做](https://vshulcz.github.io/deja-vu/guide/resume-a-session.html)——跨所有智能体找到它，再回到它原来所属的那一个里打开
 - [智能体又犯了你已经修过的错](https://vshulcz.github.io/deja-vu/guide/repeated-mistakes.html)
 - [找到当初解决它的那次会话](https://vshulcz.github.io/deja-vu/guide/find-a-session.html)

@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The guide on deleting old Claude Code sessions in Chinese, with the same commands and numbers: 368 of 1,320 files are older than 30 days and hold 4% of the bytes, while the ten largest hold 86%. From @beiryu (#4970).
 - The Claude Code and Cursor memory guides in Chinese, with the same commands and numbers. From @Quartex246 (#5019, #5020).
 - The Codex CLI history guide in Chinese: where the rollouts live, why a plain `grep` stops seeing sessions older than a week, the `jq` and `sqlite3` recipes, and search and SSH sync. From @ursasi (#5085).
+- Five more guide pages in Chinese, with their commands and paths kept verbatim: deleting Codex sessions, deleting Cursor chats, Codex resume and its two errors, the Claude Code "No conversation found with session ID", and the full context window with its measured 77% / 0.2%. From @ursasi (#5080, #5081, #5082, #5083, #5084).
 - Shell completion for `deja recall`: `--project`, `--harness` with the harness names, and `--limit` in bash, zsh, fish and PowerShell, where it used to offer search flags recall refuses. zsh's command list now offers recall too. From @orshih6 (#5015).
 
 ### Fixed
