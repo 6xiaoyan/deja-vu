@@ -1521,12 +1521,15 @@ func doctorMCP(w io.Writer) {
 		if c.name == "cherrystudio" && doctorCherryStudioMCP(w, status, c.path) {
 			continue
 		}
-		// pi has no MCP of its own, and the file is read only by the adapter
-		// package: declared there without it, the server never starts (#4583).
-		if status == "wired" && c.name == "pi" && !piMCPAdapterInstalled() {
-			fmt.Fprintf(w, "  %-12s %-14s guidance %-11s %s\n", c.name, "no adapter", guidanceStatus(guidanceHarness(c.name)), reportPath(c.path))
-			fmt.Fprintf(w, "  %-12s %s\n", "", piNoAdapterNote)
-			continue
+		// A pi older than 0.99 has no MCP of its own and reads the file only
+		// through the adapter package; a newer one can have its built-in MCP
+		// switched off. Either way the server never starts (#4583).
+		if status == "wired" && c.name == "pi" {
+			if note := piMCPUnreadNote(); note != "" {
+				fmt.Fprintf(w, "  %-12s %-14s guidance %-11s %s\n", c.name, "no adapter", guidanceStatus(guidanceHarness(c.name)), reportPath(c.path))
+				fmt.Fprintf(w, "  %-12s %s\n", "", note)
+				continue
+			}
 		}
 		// WorkBuddy AI declares the server and starts it only once the user
 		// has clicked Trust for it (#4740).
@@ -1581,7 +1584,7 @@ func doctorMCP(w io.Writer) {
 		}
 		// Declared and switched off is not wired in any sense a session
 		// feels: the client never starts the server (#4303).
-		if status == "wired" && dejaEntrySwitchedOff(c.path) {
+		if status == "wired" && dejaEntrySwitchedOff(c.name, c.path) {
 			fmt.Fprintf(w, "  %-12s %s\n", "",
 				"the entry is switched off — "+c.name+" will not start it until you turn it back on")
 		}
@@ -1625,8 +1628,12 @@ func doctorMCPDuplicateNote(keys []string) string {
 
 // dejaEntrySwitchedOff reports whether every deja entry in a JSON config is
 // switched off — `disabled: true`, or opencode's `enabled: false`, the test
-// install uses. One entry still on is enough for recall to work.
-func dejaEntrySwitchedOff(path string) bool {
+// install uses. One entry still on is enough for recall to work. A client
+// that has no switch on the entry is never off by this test.
+func dejaEntrySwitchedOff(client, path string) bool {
+	if !entrySwitchHonored(client) {
+		return false
+	}
 	b, err := readConfig(path)
 	if err != nil {
 		return false
@@ -2587,7 +2594,7 @@ func doctorTOMLDejaKeys(path string) []string {
 	}
 	found := map[string]bool{}
 	current := ""
-	for _, line := range strings.Split(string(b), "\n") {
+	for _, line := range tomlCodeLines(string(b)) {
 		if key, ok := tomlMCPHeader(line); ok {
 			current = key
 			if key == "deja" {

@@ -107,18 +107,6 @@ func listHasDeja(v any) bool {
 	return anyDeja(jsonStrings(v))
 }
 
-// yamlSwitchOff is the note for a `<keys>: false` in a YAML config.
-func yamlSwitchOff(p, client string, keys ...string) string {
-	b, err := readConfig(p)
-	if err != nil {
-		return ""
-	}
-	if v, _, _ := yamlLookup(string(b), keys...); v == "false" {
-		return mcpOffNote(client, "`"+strings.Join(keys, ".")+": false`", p)
-	}
-	return ""
-}
-
 // yamlLookup finds the key at keys in a block-style YAML document and returns
 // its scalar, or the items of the list under it, block or flow. Enough for the
 // mappings and lists clients keep their switches in; anchors, multi-line
@@ -235,45 +223,106 @@ func yamlQuoteEnd(s string, quote byte) int {
 }
 
 // tomlCodeLines is text's lines with those inside a multi-line string
-// blanked, so a line of a string never reads as a key or a table.
+// blanked, so a line of a string never reads as a key or a table. The scan is
+// per character: a triple quote inside a one-line string or a literal, or an
+// escaped quote in a basic multi-line string, opens nothing. Counting
+// delimiters per line took any of them for an opening, blanked the file from
+// there on, and install could no longer see deja's own table (#5158).
 func tomlCodeLines(text string) []string {
 	lines := strings.Split(text, "\n")
 	open := ""
 	for i, line := range lines {
-		if open != "" {
+		was := open
+		open = tomlStringOpenAfter(line, open)
+		if was != "" {
 			lines[i] = ""
-			if strings.Contains(line, open) {
-				open = ""
-			}
-			continue
-		}
-		for _, d := range []string{`"""`, `'''`} {
-			if strings.Count(tomlCode(line), d)%2 == 1 {
-				open = d
-			}
 		}
 	}
 	return lines
 }
 
-// dshRowDisabled reports whether the row with this id in a dsh patch layer
-// carries `disabled: true`, the switch dsh reads per row.
+// tomlStringOpenAfter says which multi-line delimiter is still open at the end
+// of line, given the one open at its start.
+func tomlStringOpenAfter(line, open string) string {
+	for i := 0; i < len(line); {
+		switch {
+		case open == `"""`:
+			if line[i] == '\\' {
+				i += 2
+				continue
+			}
+			if strings.HasPrefix(line[i:], `"""`) {
+				// Up to two more quotes may end the string's content.
+				i += 3
+				for i < len(line) && line[i] == '"' {
+					i++
+				}
+				open = ""
+				continue
+			}
+			i++
+		case open == "'''":
+			j := strings.Index(line[i:], "'''")
+			if j < 0 {
+				return open
+			}
+			i += j + 3
+			for i < len(line) && line[i] == '\'' {
+				i++
+			}
+			open = ""
+		case strings.HasPrefix(line[i:], `"""`):
+			open = `"""`
+			i += 3
+		case strings.HasPrefix(line[i:], "'''"):
+			open = "'''"
+			i += 3
+		case line[i] == '#':
+			return ""
+		case line[i] == '"':
+			i++
+			for i < len(line) && line[i] != '"' {
+				if line[i] == '\\' {
+					i++
+				}
+				i++
+			}
+			i++
+		case line[i] == '\'':
+			j := strings.IndexByte(line[i+1:], '\'')
+			if j < 0 {
+				return ""
+			}
+			i += j + 2
+		default:
+			i++
+		}
+	}
+	return open
+}
+
+// dshRowDisabled reports whether dsh ends up with `disabled: true` on the row
+// with this id. dsh applies a layer's patches in order: the insert in deja's
+// block first, then any row the user wrote below it, the last one that says
+// `disabled` deciding. A row above the insert patches nothing, dsh drops it as
+// "entry not found" (#5180).
 func dshRowDisabled(text, id string) bool {
 	lines := strings.Split(text, "\n")
+	inserted, off := false, false
 	for i, line := range lines {
 		t := strings.TrimSpace(line)
 		if !strings.HasPrefix(t, "- ") {
 			continue
 		}
 		dash := yamlIndentWidth(line)
-		inRow, off := false, false
+		inRow, set, val := false, false, false
 		check := func(kv string) {
 			k, v, _ := strings.Cut(kv, ":")
 			switch strings.TrimSpace(k) {
 			case "id":
 				inRow = hermesYAMLScalar(v) == id
 			case "disabled":
-				off = hermesYAMLScalar(v) == "true"
+				set, val = true, strings.ToLower(hermesYAMLScalar(v)) == "true"
 			}
 		}
 		check(strings.TrimSpace(t[2:]))
@@ -289,9 +338,34 @@ func dshRowDisabled(text, id string) bool {
 				check(nt)
 			}
 		}
-		if inRow {
-			return off
+		if !inRow {
+			continue
 		}
+		if !inserted {
+			// The first row naming the id is the insert only when it is one of
+			// the rows an insert list holds, nested under `- insert:`.
+			if !dshRowIsInserted(lines, i) {
+				continue
+			}
+			inserted = true
+		}
+		if set {
+			off = val
+		}
+	}
+	return off
+}
+
+// dshRowIsInserted reports whether the row on line i sits inside an
+// `- insert:` list rather than at the layer's top level.
+func dshRowIsInserted(lines []string, i int) bool {
+	dash := yamlIndentWidth(lines[i])
+	for j := i - 1; j >= 0; j-- {
+		t := strings.TrimSpace(lines[j])
+		if t == "" || t[0] == '#' || yamlIndentWidth(lines[j]) >= dash {
+			continue
+		}
+		return t == "- insert:" || strings.HasPrefix(t, "- insert:") || t == "insert:"
 	}
 	return false
 }
@@ -301,7 +375,7 @@ func dshRowDisabled(text, id string) bool {
 func tomlDejaEntriesOff(text string) bool {
 	lines := tomlCodeLines(text)
 	off := false
-	for _, b := range tomlMCPBlocks(strings.Join(lines, "\n")) {
+	for _, b := range tomlMCPBlocks(text) {
 		if b.key != "deja" && !tomlBlockRunsDeja(lines, b) {
 			continue
 		}

@@ -356,6 +356,13 @@ func toolHookLineSkipping(dir, cwd string, input toolHookInput, used func(string
 	// maps the Claude names onto its own — and then dropped here, so the hook
 	// fired on every action it took and had nothing to say about any of them.
 	if isCommandTool(input.ToolName) {
+		// Codex runs apply_patch through its shell tool when the model has no
+		// apply_patch tool of its own — a provider model without Codex metadata
+		// does every edit that way — and the hook then names the tool Bash with
+		// the patch in the heredoc. That is an edit, not a command.
+		if cmd := input.ToolInput.Command; strings.Contains(cmd, "apply_patch") && strings.Contains(cmd, "*** Begin Patch") {
+			return applyPatchLine(dir, cwd, cmd, askerSkip(dir, input))
+		}
 		if !commandHintsOn() {
 			return ""
 		}
@@ -407,10 +414,16 @@ func toolHookLineSkipping(dir, cwd string, input toolHookInput, used func(string
 		// is in its header, not in file_path. Pull the targets out so the
 		// file-history line fires here too — without this the hook is blind to
 		// every edit those agents make.
-		for _, path := range applyPatchFiles(input.ToolInput.Command) {
-			if line := fileHookLineOutside(dir, cwd, path, input.SessionID); line != "" {
-				return line
-			}
+		return applyPatchLine(dir, cwd, input.ToolInput.Command, askerSkip(dir, input))
+	}
+	return ""
+}
+
+// applyPatchLine is the file line for the first file in a patch that has one.
+func applyPatchLine(dir, cwd, patch string, self func(string) bool) string {
+	for _, path := range applyPatchFiles(patch) {
+		if line := fileHookLineOutside(dir, cwd, path, self); line != "" {
+			return line
 		}
 	}
 	return ""
@@ -441,7 +454,20 @@ func fileLineFor(dir, cwd string, input toolHookInput) string {
 	if path == "" {
 		return ""
 	}
-	return fileHookLineOutside(dir, cwd, path, input.SessionID)
+	return fileHookLineOutside(dir, cwd, path, askerSkip(dir, input))
+}
+
+// askerSkip says which sessions are the one asking: itself, and what counts as
+// it, a fork's source among them. The fork holds its source's turns, and the
+// note quoted the source's decision back to it (#5123). The lineage is read
+// only once a session that touched the file is in question.
+func askerSkip(dir string, input toolHookInput) func(string) bool {
+	sid := strings.TrimSpace(input.SessionID)
+	if sid == "" {
+		return nil
+	}
+	lineage := sync.OnceValue(func() map[string]bool { return askerLineage(dir, sid, input.TranscriptPath) })
+	return func(id string) bool { return id == sid || lineage()[id] }
 }
 
 // commandHintsOn reports whether the line before a command is wanted. Off
@@ -881,13 +907,14 @@ func normalizedCommandText(cmd string) string {
 }
 
 func fileHookLine(dir, cwd, path string) string {
-	return fileHookLineOutside(dir, cwd, path, "")
+	return fileHookLineOutside(dir, cwd, path, nil)
 }
 
-// fileHookLineOutside leaves out self, the session the hook fires in. It is
-// in the index once it has touched the file, and as the newest it was counted
-// and its own last reply quoted back as the file's history (#4380).
-func fileHookLineOutside(dir, cwd, path, self string) string {
+// fileHookLineOutside leaves out the sessions self reports: the one the hook
+// fires in and what counts as it. It is in the index once it has touched the
+// file, and as the newest it was counted and its own last reply quoted back as
+// the file's history (#4380).
+func fileHookLineOutside(dir, cwd, path string, self func(string) bool) string {
 	// FileSessions matches on the file's basename, so without scoping "main.go"
 	// or "README.md" collects every project's file of that name — the line then
 	// claims a history this file does not have and points `deja blame` at a
@@ -903,7 +930,7 @@ func fileHookLineOutside(dir, cwd, path, self string) string {
 	var last time.Time
 	var inScope []index.SessionMeta
 	for _, meta := range index.FileSessions(dir, path) {
-		if self != "" && meta.ID == self {
+		if self != nil && self(meta.ID) {
 			continue
 		}
 		if !pol.Allows(policy.ActivationAuto, meta.Project) {

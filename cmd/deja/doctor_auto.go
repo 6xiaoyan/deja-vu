@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -40,9 +39,7 @@ func autoWirings() []autoWiring {
 		// Kilo CLI loads the same plugin from its own config directory (#4398).
 		{"kilocode", func() string { return filepath.Join(kilocodeCLIConfigDir(), "plugins", "deja.js") }, "hook-context", ""},
 		{"cursor", func() string { return filepath.Join(sources.CursorCLIHome(), "hooks.json") }, "hook-context", ""},
-		{"gemini", func() string {
-			return filepath.Join(sources.GeminiHome(), "extensions", "deja", "hooks", "hooks.json")
-		}, "hook-context", ""},
+		{"gemini", geminiHooksPath, "hook-context", ""},
 		{"qwen", func() string { return filepath.Join(sources.QwenConfigDir(), "settings.json") }, "hook-prompt", ""},
 		{"codebuddy", codeBuddySettingsPath, "hook-context", ""},
 		{"workbuddy", workBuddySettingsPath, "hook-context", ""},
@@ -312,7 +309,7 @@ func autoWiringState(a autoWiring) (state string, binaryMissing bool) {
 	// Written, and the CLI's default V2 engine does not start it: that runs
 	// kiro_default unless the default agent is deja's or a chat names it
 	// (#4304). The IDE and --v3 run the global file regardless.
-	case a.name == "kiro" && kiroDefaultAgent() != "deja":
+	case a.name == "kiro" && !kiroV2RunsDeja():
 		state = "installed"
 	default:
 		state = "wired"
@@ -446,8 +443,8 @@ func doctorAutoRecall(w io.Writer) {
 			fmt.Fprintf(w, "  %-12s %-11s %s  (deja's hook is not under hooks.events with hooks.enabled on — `deja install zcode-auto`)\n", a.name, "stale", reportPath(path))
 		case a.name == "openclaw" && openclawPluginMissing():
 			fmt.Fprintf(w, "  %-12s %-11s %s  (deja's plugin is not in %s — `openclaw agent --local` and `openclaw chat` get no recall; `deja install openclaw-auto`)\n", a.name, "stale", reportPath(path), reportPath(openclawPluginDir()))
-		case a.name == "kiro" && kiroDefaultAgent() != "deja":
-			fmt.Fprintf(w, "  %-12s %-11s %s  (the IDE and `kiro-cli --v3` run it in every chat; the default V2 engine only in `kiro-cli chat --agent deja`, and `kiro-cli agent set-default deja` makes it every chat's)\n", a.name, "installed", reportPath(path))
+		case a.name == "kiro" && !kiroV2RunsDeja():
+			fmt.Fprintf(w, "  %-12s %-11s %s  (%s)\n", a.name, "installed", reportPath(path), kiroV2Note())
 		default:
 			fmt.Fprintf(w, "  %-12s %-11s %s%s\n", a.name, "wired", reportPath(path), note)
 			if off := autoWiringSwitchedOff(a.name); off != "" {
@@ -501,11 +498,19 @@ func doctorAutoRecall(w io.Writer) {
 // both nest ours under a key: a plain "deja appears in the file" check would
 // pass on a disabled entry.
 func doctorGooseWired(path string) bool {
-	return yamlHasChildKey(path, "extensions:", "deja:")
+	b, err := readConfig(path)
+	if err != nil {
+		return false
+	}
+	return len(gooseDejaEntries(strings.Split(lfText(b), "\n"))) > 0
 }
 
 func doctorHermesWired(path string) bool {
-	return yamlHasChildKey(path, "mcp_servers:", "deja:")
+	b, err := readConfig(path)
+	if err != nil {
+		return false
+	}
+	return len(hermesDejaEntries(strings.Split(lfText(b), "\n"))) > 0
 }
 
 // Continue keys its servers by a name field inside a list item rather than by a
@@ -596,47 +601,6 @@ func yamlTopKeyEnd(doc, key string) (int, error) {
 		}
 	}
 	return found, nil
-}
-
-// yamlHasChildKey reports whether a key sits directly under a top-level parent.
-//
-// The indent is whatever the reader wrote the block at, and asking for exactly
-// two called a goose deja had just wired at four unwired — while the writer
-// itself follows the block (#2614, #2727). "Anywhere below the top level" was
-// the other end of the same mistake: `deja:` in another server's env, or in a
-// comment-shaped example under `notes:`, then read as a wired server (#2730).
-func yamlHasChildKey(path, parent, key string) bool {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	lines := strings.Split(string(bytes.TrimPrefix(b, utf8BOM)), "\n")
-	inBlock := false
-	child := -1
-	for _, raw := range lines {
-		line := strings.TrimRight(raw, " \t\r")
-		if strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
-			continue
-		}
-		if yamlKeyLine(line, parent) && yamlIndentWidth(line) == 0 {
-			inBlock, child = true, -1
-			continue
-		}
-		if !inBlock {
-			continue
-		}
-		if yamlIndentWidth(line) == 0 {
-			inBlock = false
-			continue
-		}
-		if child < 0 {
-			child = yamlIndentWidth(line)
-		}
-		if strings.TrimSpace(line) == key && yamlIndentWidth(line) == child {
-			return true
-		}
-	}
-	return false
 }
 
 // codexHasSeenItsHook reports whether codex has recorded any opinion about

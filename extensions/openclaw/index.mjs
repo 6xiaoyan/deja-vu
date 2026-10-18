@@ -340,7 +340,10 @@ export default {
         async (event, ctx) => {
           const id = (event && event.sessionId) || where(seen, event, ctx, process.cwd()).id
           if (!id) return
-          await ask(["hook-session-end"], JSON.stringify({ session_id: id }), 5000)
+          // Read, not where(): the end must not file its id under the key.
+          const last = (ctx && ctx.sessionKey && seen.get(ctx.sessionKey)) || {}
+          const cwd = (ctx && ctx.workspaceDir) || last.dir || process.cwd()
+          await ask(["hook-session-end"], JSON.stringify({ session_id: id, cwd }), 5000)
         },
         { timeoutMs: 10000 },
       )

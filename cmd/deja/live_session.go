@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/vshulcz/deja-vu/internal/atomicfile"
@@ -89,12 +90,45 @@ func endSessionLive(dir, id string) {
 // omp, prime-agent, Senpi, gjc, OpenClaw, Hermes, Cline and dsh run when their
 // host says a session is over. It says nothing back — none of them reads a
 // reply to it — and it runs even with recall off: clearing a stamp never hands
-// anyone anything.
+// anyone anything. With recall on, and a project in the payload or the
+// environment, it also refreshes that project's start digest. The plugins send
+// a bare session id, so for them it does not yet.
 func runHookSessionEnd(dir string, stdin io.Reader) {
 	var input precompactHookInput
 	_ = json.Unmarshal(readHookPayload(stdin, hookStdinWait), &input)
 	input.adopt()
 	endSessionLive(dir, input.SessionID)
+	refreshDigestAfterSession(dir, sessionEndProject(input))
+}
+
+// sessionEndProject is the project a SessionEnd payload is about: what it
+// names, else the directory the host exported, the way hookCWD reads it for
+// the session start. Never the process's own directory: a plugin host sends a
+// bare session id and spawns the hook wherever it happens to be.
+func sessionEndProject(input precompactHookInput) string {
+	if p := hookProjectPath(input.CWD, input.WorkspaceRoots); p != "" {
+		return p
+	}
+	if p := os.Getenv("CLAUDE_PROJECT_DIR"); p != "" {
+		return p
+	}
+	return os.Getenv("DEVIN_PROJECT_DIR")
+}
+
+// refreshDigestAfterSession rebuilds the project's cached start digest once a
+// session there is over. The cache is served whatever its age, and its only
+// other refresh runs at a session start, before that session has written
+// anything, so the next session read a snapshot without the one that just
+// ended (#5119). Detached, like every refresh: the host is closing.
+func refreshDigestAfterSession(dir, cwd string) {
+	if dir == "" || strings.TrimSpace(cwd) == "" || recallIsOff() {
+		return
+	}
+	// No cache means the next start builds the digest itself.
+	if _, err := os.Stat(hookCachePath(dir, cwd)); err != nil {
+		return
+	}
+	requestHookRefresh(dir, cwd)
 }
 
 // runHookMCPCall is Copilot CLI's preMcpToolCall hook: it stamps the session
@@ -195,9 +229,72 @@ func liveSessionIDs(dir string) map[string]bool {
 
 // liveLineage is the live sessions and every session that counts as one of
 // them: a sub-agent a live session spawned is being written too, under an id
-// no hook stamps, since its hooks fire under the parent's (#4547).
+// no hook stamps, since its hooks fire under the parent's (#4547). A live
+// session the index does not hold yet is read off its own store in full: a
+// fork's first turn comes before any build has seen it, and MCP answered it
+// with its source (#5129).
 func liveLineage(dir string) map[string]bool {
-	return index.Lineage(dir, liveSessionIDs(dir))
+	ids := liveSessionIDs(dir)
+	var wholes []model.Session
+	for id := range ids {
+		if isSpawnedReader(id) || index.HasSession(dir, id) {
+			continue
+		}
+		if w, ok := liveWhole(id); ok {
+			wholes = append(wholes, w)
+		}
+	}
+	return index.LineageWhole(dir, ids, wholes...)
+}
+
+// liveWholes keeps each unindexed live session read for this process. What a
+// fork copied is fixed when it forks, and turns it adds later are newer than
+// anything indexed, so the first read answers for the rest; one recall asks
+// two or three times, and a fork of a long session takes a second to read.
+var liveWholes = struct {
+	sync.Mutex
+	m map[string]model.Session
+}{m: map[string]model.Session{}}
+
+// lineageOnly is what LineageWhole reads of a session: every message's role
+// and time, and the text up to the turn it opens on. A fork of a long session
+// is tens of MB whole.
+func lineageOnly(s model.Session) model.Session {
+	out := model.Session{ID: s.ID, Harness: s.Harness, Kind: s.Kind, Parent: s.Parent, Messages: make([]model.Message, len(s.Messages))}
+	opened := false
+	for i, m := range s.Messages {
+		out.Messages[i] = model.Message{Role: m.Role, Time: m.Time}
+		if !opened {
+			out.Messages[i].Text = m.Text
+			opened = index.SessionOpening(model.Session{Harness: s.Harness, Messages: out.Messages[:i+1]}) != 0
+		}
+	}
+	return out
+}
+
+func liveWhole(id string) (model.Session, bool) {
+	// Keyed on the store too: the id is only unique inside one.
+	key := sources.OpencodeDB() + "\x00" + id
+	liveWholes.Lock()
+	w, ok := liveWholes.m[key]
+	liveWholes.Unlock()
+	if ok {
+		return w, true
+	}
+	w, ok = askerHead(id, "")
+	if !ok {
+		if w, ok = sources.ClineForkSession(id); !ok {
+			return w, false
+		}
+	}
+	w = lineageOnly(w)
+	liveWholes.Lock()
+	if len(liveWholes.m) >= liveSessionsMax {
+		clear(liveWholes.m)
+	}
+	liveWholes.m[key] = w
+	liveWholes.Unlock()
+	return w, true
 }
 
 // askerLineage is the session a hook speaks for and every session that counts
@@ -225,18 +322,25 @@ func askerLineage(dir, asker, transcript string, ids ...string) map[string]bool 
 	if asker = strings.TrimSpace(asker); asker != "" && !isSpawnedReader(asker) && !index.HasSession(dir, asker) {
 		if h, ok := askerHead(asker, transcript); ok {
 			heads = append(heads, h)
+		} else if w, ok := sources.ClineForkSession(asker); ok {
+			// Read whole, so the copy it holds is left out and a sibling
+			// fork that went on past it is not (#5151).
+			return index.LineageWhole(dir, set, lineageOnly(w))
 		}
 	}
 	return index.Lineage(dir, set, heads...)
 }
 
 // askerHead is the session read off its own store: the first records of the
-// transcript the payload names, or opencode's database, which the plugin's
-// payload does not name a file in.
+// transcript the payload names, or opencode's or Hermes' database or Copilot
+// CLI's session folder, which their payloads do not name a file in (#5137).
 func askerHead(id, transcript string) (model.Session, bool) {
 	if transcript != "" {
 		s, err := sources.TranscriptHead(transcript, id)
 		return s, err == nil
+	}
+	if s, err := sources.CopilotSessionHead(id); err == nil {
+		return s, true
 	}
 	if strings.HasPrefix(id, "ses_") {
 		for _, s := range sources.LoadOpencodeSession(id) {
@@ -244,6 +348,16 @@ func askerHead(id, transcript string) (model.Session, bool) {
 				return s, true
 			}
 		}
+	}
+	// A Hermes branch names its source in the sessions table; that is all
+	// lineage needs of it (#5141).
+	if s, ok := sources.HermesSessionHead(id); ok && s.Parent != "" {
+		return s, true
+	}
+	// A kiro-cli sub-agent's header names the session that spawned it; its
+	// hooks name only its own.
+	if s, ok := sources.KiroSessionHead(id); ok {
+		return s, true
 	}
 	return model.Session{}, false
 }
