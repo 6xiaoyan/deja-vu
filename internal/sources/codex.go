@@ -399,6 +399,14 @@ func parseCodexRolloutWithScanner(s model.Session, idSettled bool, knownCWD stri
 	// the file's own; the rest are inherited. Letting a later record win filed
 	// a child's turns under its parent and left the child unreachable (#3933).
 	metaSeen := idSettled
+	// Where a copy of another thread's history begins in s.Messages and in
+	// events, or -1. A sub-agent spawned with fork_context starts with its
+	// parent's conversation stamped at spawn time, and read as its own the
+	// child took the parent's first prompt for its title and every parent word
+	// for its own (#5210). Codex 0.149 leaves thread_settings_applied out of
+	// the copy and writes one before the child's first turn, so that record
+	// ends it; a rollout that never writes one keeps everything, as before.
+	inheritedAt, inheritedEvents := -1, 0
 	var events []model.Message
 	var trae *traeTurns
 	if s.Harness == "trae" {
@@ -418,6 +426,9 @@ func parseCodexRolloutWithScanner(s model.Session, idSettled bool, knownCWD stri
 				// own head carried none would otherwise resolve them nowhere.
 				if cwd == "" {
 					cwd, _ = payload["cwd"].(string)
+				}
+				if id, _ := payload["id"].(string); id != "" && id != s.ID && inheritedAt < 0 {
+					inheritedAt, inheritedEvents = len(s.Messages), len(events)
 				}
 				return
 			}
@@ -456,6 +467,16 @@ func parseCodexRolloutWithScanner(s model.Session, idSettled bool, knownCWD stri
 			s.Kind, s.Parent = codexLineage(payload)
 			return
 		}
+		if pt, _ := payload["type"].(string); pt == "thread_settings_applied" && inheritedAt >= 0 {
+			s.Messages, events = s.Messages[:inheritedAt], events[:inheritedEvents]
+			for id, i := range calls {
+				if i >= inheritedAt {
+					delete(calls, id)
+				}
+			}
+			inheritedAt = -1
+			return
+		}
 		if trae != nil {
 			trae.record(&s, m, payload, cwd, t, calls)
 			return
@@ -472,7 +493,7 @@ func parseCodexRolloutWithScanner(s model.Session, idSettled bool, knownCWD stri
 		}
 		switch pt, _ := payload["type"].(string); pt {
 		case "function_call":
-			codexCall(&s, payload, calls, t)
+			codexCall(&s, payload, calls, cwd, t)
 			return
 		case "function_call_output", "custom_tool_call_output":
 			codexCallOutput(&s, payload, calls, t)
@@ -559,7 +580,7 @@ func parseCodexRolloutWithScanner(s model.Session, idSettled bool, knownCWD stri
 // shell_command is the other shell, taking `command` where exec_command takes
 // `cmd`. Codex falls back to it whenever unified exec is off, and on those
 // setups a session read for exec_command alone had no commands (#4490).
-func codexCall(s *model.Session, payload map[string]any, calls map[string]int, t time.Time) {
+func codexCall(s *model.Session, payload map[string]any, calls map[string]int, cwd string, t time.Time) {
 	name, _ := payload["name"].(string)
 	if name != "exec_command" && name != "shell_command" {
 		return
@@ -568,6 +589,7 @@ func codexCall(s *model.Session, payload map[string]any, calls map[string]int, t
 	var in struct {
 		Cmd     string `json:"cmd"`
 		Command string `json:"command"`
+		Workdir string `json:"workdir"`
 	}
 	if json.Unmarshal([]byte(args), &in) != nil {
 		return
@@ -577,6 +599,19 @@ func codexCall(s *model.Session, payload map[string]any, calls map[string]int, t
 	}
 	if in.Cmd == "" {
 		return
+	}
+	// A model with no apply_patch tool of its own runs it through the shell
+	// with the patch in a heredoc, and Codex applies it all the same. Read as
+	// a command only, the edit left no files or wrote record (#5211). Codex
+	// applies it in the call's workdir, which may not be the session's.
+	if strings.Contains(in.Cmd, "apply_patch") && strings.Contains(in.Cmd, "*** Begin Patch") {
+		dir := cwd
+		if w := strings.TrimSpace(in.Workdir); w != "" {
+			dir = resolveToolPath(w, cwd)
+		}
+		for _, body := range patchTexts(in.Cmd, 0) {
+			codexPatchText(s, body, dir, t)
+		}
 	}
 	if !IndexCommands() || !worthIndexing(in.Cmd) {
 		return
@@ -651,6 +686,11 @@ func codexPatch(s *model.Session, payload map[string]any, cwd string, t time.Tim
 		return
 	}
 	body, _ := payload["input"].(string)
+	codexPatchText(s, body, cwd, t)
+}
+
+// codexPatchText records one apply_patch text, from the tool or the shell.
+func codexPatchText(s *model.Session, body, cwd string, t time.Time) {
 	if body == "" {
 		return
 	}

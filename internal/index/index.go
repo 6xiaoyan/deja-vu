@@ -715,7 +715,41 @@ import (
 // rows already indexed have neither until a rebuild (#5143). Their first
 // prompt no longer opens with the empty <hook_result> wrappers of deja's own
 // hooks either, which is what titled them (#5144).
-const version = 71
+// 72: a Gemini sub-agent's first turn no longer opens with the
+// <loaded_context> block Gemini puts ahead of its task; it titled every child
+// session already indexed (#5214).
+// 73: Qwen Code sub-agent logs are read by default, as Claude's are, so the
+// files they wrote have an author (#5223).
+// 74: a Copilot CLI sub-agent run is its own session under its parent and a
+// /fork names its source (#5216, #5217); rows already indexed hold neither
+// until a rebuild.
+// 75: a Grok --fork-session copy keeps only its own records, not the
+// source's it was started from (#5235); forks already indexed keep the copies
+// until a rebuild.
+// 76: a goose sub-agent run is read under the session that spawned it, and a
+// goose fork keeps only its own turns; both were indexed the old way
+// (#5232, #5233).
+// 77: a Kimi /fork keeps only its own turns under its source, a Kimi
+// sub-agent keeps its task and is read by default, and a relative Write/Edit
+// path sits under the session's cwd (#5226, #5227, #5228, #5229).
+// 78: a Grok --fork-session copy reads as a fork of its source, and a Grok
+// subagent hangs under the session whose subagent_spawned record names it
+// (#5263, #5264); rows already indexed hold neither until a rebuild.
+// 79: a Claude Code /branch is read as a fork of the session it names in
+// forkedFrom, which the rows already indexed do not carry until a rebuild
+// (#5241).
+// 80: a dsh sub-agent names its parent, and a session's spawned family is
+// left out of its recall at any depth; sub-agent rows already indexed hold no
+// parent until a rebuild.
+// 81: an opencode apply_patch with a relative header is filed under the
+// session's directory, as the tool resolved it; rows already indexed carry the
+// bare name until a rebuild (#5212).
+// 82: a Cursor CLI subagent transcript is read by default as its task,
+// answer and edits under the session that spawned it (#5243, #5244).
+// 83: a Hermes delegate_task child is a sub-agent of its parent whatever
+// source it ran under, files under its parent's project, and Hermes' relative
+// file paths sit under the session's directory (#5248, #5249, #5250).
+const version = 83
 
 // onDiskFormat is how the store is laid out on disk — the record encoding, the
 // bucket encoding, the manifest's own shape. It moves only when a reader of an

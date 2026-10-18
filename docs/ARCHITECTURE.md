@@ -23,12 +23,12 @@ against the loader list.
 | Grok Build | `grok.go` | ACP update streams and session summaries under `~/.grok/sessions` |
 | Qwen Code | `qwen.go` | JSONL chats under `~/.qwen/projects/*/chats` |
 | pi | `pi.go` | JSONL transcripts under `~/.pi/agent/sessions` |
-| Copilot CLI | `copilot.go` | `events.jsonl` per session under `~/.copilot/session-state` |
+| Copilot CLI | `copilot.go` | `events.jsonl` per session under `~/.copilot/session-state`; a `task` sub-agent's records (stamped `agentId`) read as a side chain of the session, a `/fork` as a fork of the session its `session.info` note names |
 | VS Code Copilot Chat | `copilot_chat.go`, `copilot_agent.go` | `.jsonl` / `.json` under VS Code User `workspaceStorage/*/chatSessions`, and the extension's own `GitHub.copilot-chat/transcripts/*.jsonl` |
 | Cline | `cline.go` | task JSON under the VS Code extension's storage, both store generations |
 | Continue | `continuedev.go` | one JSON document per session under `~/.continue/sessions`, with `sessions.json` as the list |
 | Roo Code | `roo.go` | task JSON under `rooveterinaryinc.roo-cline` in VS Code globalStorage, and the CLI's own store under `~/.vscode-mock/global-storage` |
-| Goose | `goose.go` | legacy JSONL sessions and the newer SQLite session store |
+| Goose | `goose.go`, `goose_lineage.go` | legacy JSONL sessions and the newer SQLite session store; a `sub_agent` row with `parent_session_id` read as its parent's child, a fork found by the message ids it copied and read as its own turns |
 | Kimi Code | `kimi.go` | per-agent `wire.jsonl` under `~/.kimi-code/sessions` |
 | OpenClaw | `openclaw.go` | append-only pi-format JSONL under `~/.openclaw/agents` |
 | omp (Oh My Pi) | `omp.go` | JSONL transcripts under `~/.omp/agent/sessions` and each profile beside it |

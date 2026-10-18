@@ -983,22 +983,16 @@ func installTarget(target, exe string, uninstall bool) (installResult, error) {
 	case "muse-auto":
 		return installMuseAuto(exe, uninstall)
 	case "kimi":
-		return installMCPJSON(filepath.Join(sources.KimiConfigDir(), "mcp.json"), exe, uninstall)
+		return installKimiMCP(exe, uninstall)
 	case "kimi-auto":
 		// Both halves in the result: the report is what says which files were
 		// touched, and this one wrote mcp.json without ever naming it (#3254).
-		// The hooks' refusal is asked first, so a refused target writes nothing.
-		if !uninstall {
-			path := filepath.Join(sources.KimiConfigDir(), "config.toml")
-			old, err := readConfig(path)
-			if err != nil {
-				return installResult{}, err
-			}
-			if err := tomlInlineKey(lfText(old), "[[hooks]]"); err != nil {
-				return installResult{}, configParseError(path, err)
-			}
+		// The refusals of the hooks and the status line are asked first, so a
+		// refused target writes nothing.
+		if err := kimiAutoPreflight(exe, uninstall); err != nil {
+			return installResult{}, err
 		}
-		mcp, err := installMCPJSON(filepath.Join(sources.KimiConfigDir(), "mcp.json"), exe, uninstall)
+		mcp, err := installKimiMCP(exe, uninstall)
 		if err != nil {
 			return installResult{}, err
 		}
@@ -1066,6 +1060,11 @@ func installTarget(target, exe string, uninstall bool) (installResult, error) {
 	case "zcode-auto":
 		return installZCodeAuto(exe, uninstall)
 	case "cline-auto":
+		if !uninstall {
+			if err := clineAutoPreflight(exe); err != nil {
+				return installResult{}, err
+			}
+		}
 		mcp, err := installMCPJSON(sources.ClineMCPSettingsPath(), exe, uninstall)
 		if err != nil {
 			return installResult{}, err
@@ -1618,11 +1617,19 @@ func snapshotIfSameJSON(path string, old, next []byte) []byte {
 	if bytes.Equal(old, next) {
 		return next
 	}
-	want, ok := decodeJSONExact(next)
+	// JSONC too, while its comments are the snapshot's: opencode's own
+	// `"$schema": "…",}` came back from a round trip with the brace moved,
+	// and an emptied `"mcp": {}` split over two lines. Only deja's own
+	// snapshot there: the widening is not meant to reach a .bak the reader
+	// keeps beside a commented config.
+	want, ok := decodeJSONCExact(next)
 	if !ok {
 		return next
 	}
-	if before, ok := decodeJSONExact(old); ok && reflect.DeepEqual(before, want) {
+	if _, strict := decodeJSONExact(next); !strict && !snapshotTaken(path) {
+		return next
+	}
+	if before, ok := decodeJSONCExact(old); ok && reflect.DeepEqual(before, want) {
 		return next
 	}
 	bak := path + ".bak"
@@ -1634,7 +1641,10 @@ func snapshotIfSameJSON(path string, old, next []byte) []byte {
 		return next
 	}
 	b = bytes.TrimPrefix(b, utf8BOM)
-	if have, ok := decodeJSONExact(b); !ok || !reflect.DeepEqual(want, have) {
+	if have, ok := decodeJSONCExact(b); !ok || !reflect.DeepEqual(want, have) {
+		return next
+	}
+	if jsonCommentText(lfText(b)) != jsonCommentText(lfText(next)) {
 		return next
 	}
 	return b
@@ -1664,9 +1674,49 @@ func dropOwnBackup(path string) {
 	if err != nil {
 		return
 	}
-	if mentionsDeja(b) && !holdsForeignDejaEntry(b) {
+	if snapshotHoldsDejaWiring(b) && !holdsForeignDejaEntry(b) {
 		_ = os.Remove(bak)
 	}
+}
+
+// snapshotHoldsDejaWiring is mentionsDeja over what deja writes, not over
+// what the reader wrote. In a JSON snapshot the reader's own "deja" — a name
+// in an allow list, as doctor asks of an OpenClaw reader (#5256), or a word
+// in a comment — is theirs, and counting it deleted the snapshot of a config
+// deja never wired (#5281). Deja's entries are keyed by the name or run its
+// commands, and both survive the decode.
+func snapshotHoldsDejaWiring(b []byte) bool {
+	v, ok := decodeJSONCExact(bytes.TrimPrefix(b, utf8BOM))
+	if !ok {
+		return mentionsDeja(b)
+	}
+	out, err := json.MarshalIndent(withoutDejaListNames(v), "", " ")
+	if err != nil {
+		return mentionsDeja(b)
+	}
+	return mentionsDeja(out)
+}
+
+// withoutDejaListNames is v without the list items that are the bare name.
+func withoutDejaListNames(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		m := make(map[string]any, len(t))
+		for k, c := range t {
+			m[k] = withoutDejaListNames(c)
+		}
+		return m
+	case []any:
+		var l []any
+		for _, c := range t {
+			if s, ok := c.(string); ok && strings.TrimSpace(s) == "deja" {
+				continue
+			}
+			l = append(l, withoutDejaListNames(c))
+		}
+		return l
+	}
+	return v
 }
 
 // holdsForeignDejaEntry reports whether a snapshot keeps an entry named "deja"
@@ -2201,7 +2251,11 @@ func installClaude(exe string, uninstall bool) (installResult, error) {
 	if len(bytes.TrimSpace(old)) == 0 {
 		root = map[string]any{}
 	} else if configIsJSONC(old) {
-		return writeJSONCEntry(path, old, "mcpServers", mcpServerEntry(exe), uninstall)
+		res, err := writeJSONCEntry(path, old, "mcpServers", mcpServerEntry(exe), uninstall)
+		if !entrySwitchHonored("claude-code") {
+			res.Note = dropNotePart(res.Note, switchedOffNote)
+		}
+		return res, err
 	} else if err := json.Unmarshal(old, &root); err != nil {
 		return installResult{}, configParseError(path, err)
 	}
@@ -2242,6 +2296,9 @@ func installClaude(exe string, uninstall bool) (installResult, error) {
 			noteBlockAdded(path, "mcpServers."+key)
 		}
 		m[key], note = mergeDejaEntry(m[key], mcpServerEntry(exe))
+		if !entrySwitchHonored("claude-code") {
+			note = dropNotePart(note, switchedOffNote)
+		}
 		note = withOtherDejaEntries(note, m, key)
 	}
 	next, err := marshalConfigLike(old, root)
@@ -3936,10 +3993,42 @@ func keepSwitch(prev any, next map[string]any) string {
 // drops every other key, and `cursor-agent mcp list` shows an entry with
 // `"disabled": true` ready. Its switch is `cursor-agent mcp disable`, which
 // writes the project's mcp-disabled.json, and clientMCPDenied reads that.
-// Calling the entry off told the person recall was off while it ran (#5162;
-// #4303 assumed Cursor read Kiro's key).
+// Claude Code does not either: 2.1.302 starts an entry with `"disabled":
+// true`, and its switch is disabledMcpServers in the project's config, which
+// clientMCPDenied reads too. Calling the entry off told the person recall was
+// off while it ran (#5162, #5280; #4303 assumed both read Kiro's key).
 func entrySwitchHonored(client string) bool {
-	return client != "cursor"
+	return len(entrySwitchKeys(client)) > 0
+}
+
+// entrySwitchKeys is which of the entry's own keys a client reads as off.
+// Kimi Code 2.2 reads `enabled` and drops the rest, so `/mcp` lists an entry
+// with "disabled": true connected and runs it.
+func entrySwitchKeys(client string) []string {
+	switch client {
+	case "cursor", "claude-code":
+		return nil
+	case "kimi":
+		return []string{"enabled"}
+	}
+	return []string{"disabled", "enabled"}
+}
+
+// entrySwitchedOffFor is entrySwitchedOff with only the keys the client reads.
+func entrySwitchedOffFor(client string, entry map[string]any) bool {
+	for _, k := range entrySwitchKeys(client) {
+		switch k {
+		case "disabled":
+			if off, ok := entry[k].(bool); ok && off {
+				return true
+			}
+		case "enabled":
+			if on, ok := entry[k].(bool); ok && !on {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // dropNotePart removes one "; "-joined part from an install note.
@@ -4366,8 +4455,11 @@ func installOpencodeShaped(dir, base, exe string, uninstall bool) (installResult
 	var note string
 	// The content, not the name: opencode reads either file as JSONC, and
 	// picking the writer by extension meant the same commented config was
-	// edited as text under one name and refused under the other (#1664).
-	if strings.HasSuffix(path, ".jsonc") || configIsJSONC(old) {
+	// edited as text under one name and refused under the other (#1664). The
+	// same holds the other way: plain JSON in opencode.jsonc — `{}`, the
+	// $schema line on one line, a minified config — was refused by the text
+	// writer while the decoding writer edits those bytes under the other name.
+	if configIsJSONC(old) {
 		next, note, err = updateOpencodeJSONC(old, exe, uninstall)
 	} else {
 		next, note, err = updateOpencodeJSON(old, path, exe, uninstall)
@@ -5080,6 +5172,13 @@ func updateOpencodeJSONC(old []byte, exe string, uninstall bool) ([]byte, string
 			return nil, "", fmt.Errorf("opencode config keeps its servers under \"mcp.servers\"; deja edits the top of the \"mcp\" block and would move the entry there — add the deja server by hand")
 		}
 		body, dropped, wasLast, droppedAt := dropJSONCEntry(block, key)
+		if uninstall && len(dropped) == 0 {
+			// No entry of deja's to take out, so the file as it was: the lines
+			// here are the ones openInlineBlock split, and joining them wrote
+			// a one-line block back over two lines into a config deja had
+			// never touched.
+			return old, leftDejaEntriesNote(servers), nil
+		}
 		// What the reader put on our own entry is theirs: an environment
 		// pointing at a store on another disk, an entry switched off. The
 		// parsed path has merged those since #2479; this one rewrote the line
@@ -5151,7 +5250,7 @@ func updateOpencodeJSONC(old []byte, exe string, uninstall bool) ([]byte, string
 		return []byte(strings.Join(out, "\n") + "\n"), note, nil
 	}
 	if uninstall {
-		return []byte(strings.Join(lines, "\n") + "\n"), "", nil
+		return old, "", nil
 	}
 	// An "mcp" key exists but brace-counting could not bound it — its opening
 	// brace is on a later line, or the braces are unbalanced. Adding a fresh
@@ -5162,6 +5261,17 @@ func updateOpencodeJSONC(old []byte, exe string, uninstall bool) ([]byte, string
 		return nil, "", fmt.Errorf("opencode config has an \"mcp\" block deja could not edit without risking it — add the deja server by hand")
 	}
 	insert := len(lines) - 1
+	// opencode puts its $schema line into a config that lacks one, and into
+	// `{}` that gives `"$schema": "…",}` — the closing brace at the end of
+	// the last line of code (1.18.35). That brace goes on a line of its own so
+	// the block has somewhere to go above it.
+	if insert >= 1 && stripJSONComments(lines[insert]) == lines[insert] {
+		l := strings.TrimRight(lines[insert], " \t")
+		if code, _, _ := jsoncCodeOf(l, false); code != "}" && strings.HasSuffix(code, "}") && jsoncBraceDelta(code) < 0 {
+			lines = append(lines[:insert:insert], strings.TrimRight(l[:len(l)-1], " \t"), "}")
+			insert++
+		}
+	}
 	// The block is spliced in above the file's closing brace, so the file has
 	// to have one of its own on that line. On a config written as a single
 	// line the splice put the new block *before* the object (#2777).

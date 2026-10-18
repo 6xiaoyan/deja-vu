@@ -90,6 +90,20 @@ func jsonStatuslineUpdate(path string, keys []string, entry map[string]any, unin
 	before, _ := json.Marshal(root)
 	cmd, _ := entry["command"].(string)
 	last := keys[len(keys)-1]
+	// A null parent in a commented file: the text writer would put a second
+	// key of that name beside it, and the reader's null wins the read.
+	if jsonc && !uninstall {
+		cur := root
+		for _, k := range keys[:len(keys)-1] {
+			v, held := cur[k]
+			if held && v == nil {
+				return installResult{}, fmt.Errorf("%s: %s is null, so there is nowhere to put the status line", path, k)
+			}
+			if cur, _ = v.(map[string]any); cur == nil {
+				break
+			}
+		}
+	}
 	parent := statuslineAt(root, keys, !uninstall)
 	if parent == nil {
 		if uninstall {
@@ -98,6 +112,10 @@ func jsonStatuslineUpdate(path string, keys []string, entry map[string]any, unin
 		return installResult{}, fmt.Errorf("%s: %s is not an object, so there is nowhere to put the status line", path, strings.Join(keys[:len(keys)-1], "."))
 	}
 	existing, _ := parent[last].(map[string]any)
+	// `"statusLine": null` is a key the text writer has to write over, not
+	// beside: the last of two keys wins the read.
+	_, held := parent[last]
+	nullHeld := held && parent[last] == nil
 	kind := hookNotDejas
 	if existing != nil {
 		kind = hookCommandKindOf(existing["command"], cmd)
@@ -125,7 +143,7 @@ func jsonStatuslineUpdate(path string, keys []string, entry map[string]any, unin
 		parent[last] = entry
 	}
 	if jsonc {
-		return installResult{}, fmt.Errorf("%s: deja cannot edit the status line in a file that carries comments — set it by hand, or take the comments out", path)
+		return writeJSONCStatusline(path, old, root, keys, entry, uninstall, nullHeld, write)
 	}
 	if !write {
 		if after, _ := json.Marshal(root); string(after) == string(before) {
@@ -142,17 +160,99 @@ func jsonStatuslineUpdate(path string, keys []string, entry map[string]any, unin
 	return installResult{Path: path, Action: a}, err
 }
 
+// writeJSONCStatusline makes the edit decided above as text, for a settings
+// file that carries comments or trailing commas. Copilot CLI, Cursor and the
+// rest read theirs as JSONC, and refusing one failed the whole -auto target
+// after its MCP entry and hooks were written, or, on the way out, left a status
+// line running a deja-hook uninstall had just removed.
+//
+// root is the file as it will read afterwards: on uninstall, a parent the
+// status line was the only thing in is already gone from it, and goes from
+// the text too.
+//
+// write false only checks, as the JSON path does: a pre-flight that wrote
+// here left the status line wired in a target it then refused.
+func writeJSONCStatusline(path string, old []byte, root map[string]any, keys []string, entry map[string]any, uninstall, nullHeld, write bool) (installResult, error) {
+	text := lfText(old)
+	parents := keys[:len(keys)-1]
+	last := keys[len(keys)-1]
+	var next string
+	var err error
+	if uninstall {
+		dropFrom := len(parents)
+		for i := range parents {
+			if statuslineAt(root, keys[:i+2], false) == nil {
+				dropFrom = i
+				break
+			}
+		}
+		next, err = jsoncSetEntry(text, joinBlockKey(parents), last, "", true, dropFrom)
+	} else {
+		var body string
+		if body, err = jsoncEntryText(entry); err != nil {
+			return installResult{}, err
+		}
+		if nullHeld {
+			next, err = jsoncReplaceNull(text, parents, last, body)
+		} else {
+			next, err = jsoncSetEntry(text, joinBlockKey(parents), last, body, false, len(parents))
+		}
+	}
+	if err != nil {
+		return installResult{}, configParseError(path, err)
+	}
+	if !write {
+		if next == text {
+			return installResult{Path: path, Action: "unchanged"}, nil
+		}
+		return installResult{Path: path}, configWritable(path)
+	}
+	a, err := writeIfChanged(path, old, []byte(next))
+	return installResult{Path: path, Action: a}, err
+}
+
+// jsoncReplaceNull writes body over a key's null value under parents.
+func jsoncReplaceNull(text string, parents []string, key, body string) (string, error) {
+	open := zedTopLevelOpen(text)
+	if open < 0 {
+		return "", fmt.Errorf("does not look like a settings object")
+	}
+	block := &zedSpan{keyStart: open, valueOpen: open, valueEnd: zedObjectEnd(text, open)}
+	if len(parents) > 0 {
+		block, _ = walkJSONCKeys(text, open, parents)
+	}
+	if block == nil || block.valueEnd < 0 {
+		return "", fmt.Errorf("cannot find %q to set", strings.Join(append(append([]string{}, parents...), key), "."))
+	}
+	at := jsoncScalarValue(text, block, key)
+	if at == nil || at[0] == at[1] {
+		return "", fmt.Errorf("cannot find %q to set", strings.Join(append(append([]string{}, parents...), key), "."))
+	}
+	return text[:at[0]] + entryAtDepth(body, len(parents)) + text[at[1]:], nil
+}
+
 // installTOMLStatusline writes the [table] block in a TOML config, with the
 // same rules: deja's own block is rewritten, anyone else's left with a note.
 // A table set any other way (inline, dotted keys) counts as someone else's.
 func installTOMLStatusline(path, table, block, cmd string, uninstall bool) (installResult, error) {
-	old, err := readConfig(path)
+	old, next, res, err := tomlStatuslineUpdate(path, table, block, cmd, uninstall)
+	if err != nil || next == nil {
+		return res, err
+	}
+	a, err := writeIfChanged(path, old, next)
+	return installResult{Path: path, Action: a}, err
+}
+
+// tomlStatuslineUpdate is installTOMLStatusline without the write: next is
+// nil when the answer is res as it stands.
+func tomlStatuslineUpdate(path, table, block, cmd string, uninstall bool) (old, next []byte, res installResult, err error) {
+	old, err = readConfig(path)
 	if err != nil {
-		return installResult{}, err
+		return nil, nil, installResult{}, err
 	}
 	text := lfText(old)
 	if err := tomlHeadersClose(text); err != nil {
-		return installResult{}, configParseError(path, err)
+		return nil, nil, installResult{}, configParseError(path, err)
 	}
 	lines := strings.Split(text, "\n")
 	code := tomlCodeLines(text)
@@ -187,28 +287,67 @@ func installTOMLStatusline(path, table, block, cmd string, uninstall bool) (inst
 	elsewhere := start < 0 && tomlNamesKeyOutsideTable(code, table)
 	switch {
 	case uninstall && (start < 0 || kind != hookDejas):
-		return installResult{Path: path, Action: "unchanged"}, nil
+		return old, nil, installResult{Path: path, Action: "unchanged"}, nil
 	case !uninstall && kind == hookWrapsDejas:
-		return installResult{Path: path, Action: "unchanged"}, nil
+		return old, nil, installResult{Path: path, Action: "unchanged"}, nil
 	case !uninstall && (elsewhere || start >= 0 && kind == hookNotDejas):
-		return installResult{Path: path, Action: "unchanged", Note: statuslineKeptNote(prev, cmd, true)}, nil
+		return old, nil, installResult{Path: path, Action: "unchanged", Note: statuslineKeptNote(prev, cmd, true)}, nil
+	}
+	// The keys deja's block sets. Anything else in the table is the client's
+	// own: Kimi keeps `items` beside the command and writes both, and
+	// rebuilding the table from deja's block dropped them.
+	blockLines := strings.Split(strings.TrimRight(block, "\n"), "\n")
+	ours := map[string]string{}
+	for _, line := range blockLines[1:] {
+		if k, _, ok := tomlLineKeyValue(line); ok {
+			ours[k] = line
+		}
 	}
 	var out []string
 	switch {
-	case start >= 0 && !uninstall:
-		// Rewritten where it stands. Moved to the end, it traded places with
-		// the MCP block the same target writes, which also goes to the end, so
-		// every repeat install rewrote the file twice and reported a change.
+	case start >= 0:
 		keep := end
 		for keep > start+1 && strings.TrimSpace(lines[keep-1]) == "" {
 			keep--
 		}
-		out = append(append(append(out, lines[:start]...), strings.Split(strings.TrimRight(block, "\n"), "\n")...), lines[keep:]...)
-		s := strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n"
-		a, err := writeIfChanged(path, old, []byte(s))
-		return installResult{Path: path, Action: a}, err
-	case start >= 0:
-		out = append(append(out, lines[:start]...), lines[end:]...)
+		var body []string
+		foreign := false
+		written := map[string]bool{}
+		for i := start + 1; i < keep; i++ {
+			k, _, ok := tomlLineKeyValue(code[i])
+			if _, mine := ours[k]; ok && mine {
+				if !uninstall && !written[k] {
+					body = append(body, ours[k])
+					written[k] = true
+				}
+				continue
+			}
+			// A comment is not a key: on its own it would keep an empty
+			// table, which grok warns about.
+			if strings.TrimSpace(tomlCode(code[i])) != "" {
+				foreign = true
+			}
+			body = append(body, lines[i])
+		}
+		if !uninstall {
+			// Rewritten where it stands. Moved to the end, it traded places
+			// with the MCP block the same target writes, which also goes to
+			// the end, so every repeat install rewrote the file twice.
+			for _, line := range blockLines[1:] {
+				if k, _, ok := tomlLineKeyValue(line); ok && !written[k] {
+					body = append(body, line)
+					written[k] = true
+				}
+			}
+			out = append(append(append(append(out, lines[:start]...), lines[start]), body...), lines[keep:]...)
+			s := strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n"
+			return old, []byte(s), installResult{}, nil
+		}
+		if foreign {
+			out = append(append(append(append(out, lines[:start]...), lines[start]), body...), lines[keep:]...)
+		} else {
+			out = append(append(out, lines[:start]...), lines[end:]...)
+		}
 	default:
 		out = lines
 	}
@@ -222,8 +361,7 @@ func installTOMLStatusline(path, table, block, cmd string, uninstall bool) (inst
 	if s != "" {
 		s += "\n"
 	}
-	a, err := writeIfChanged(path, old, []byte(s))
-	return installResult{Path: path, Action: a}, err
+	return old, []byte(s), installResult{}, nil
 }
 
 // tomlNamesKeyOutsideTable reports whether a.b is set some way other than a
@@ -342,6 +480,9 @@ func installAntigravityStatusline(exe string, uninstall bool) (installResult, er
 // for the answer.
 func installKimiStatusline(exe string, uninstall bool) (installResult, error) {
 	cmd := hostStatuslineCommand(exe, uninstall)
-	block := "[status_line]\ncommand = " + strconv.Quote(cmd) + "\n"
-	return installTOMLStatusline(filepath.Join(sources.KimiConfigDir(), "tui.toml"), "status_line", block, cmd, uninstall)
+	return installTOMLStatusline(filepath.Join(sources.KimiConfigDir(), "tui.toml"), "status_line", kimiStatuslineBlock(cmd), cmd, uninstall)
+}
+
+func kimiStatuslineBlock(cmd string) string {
+	return "[status_line]\ncommand = " + strconv.Quote(cmd) + "\n"
 }

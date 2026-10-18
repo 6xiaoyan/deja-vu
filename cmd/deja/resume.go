@@ -328,8 +328,9 @@ func resumeCommand(s model.Session) (string, string, error) {
 	if !resumeIDPattern.MatchString(s.ID) {
 		return "", "", fmt.Errorf("session id %q contains characters deja will not place in a command", digest.Short(s.ID))
 	}
-	// A Kimi, Qwen or CodeBuddy sub-agent log is a session in deja under
-	// DEJA_INCLUDE_SUBAGENTS=1, but none of these clients opens one on its own; the
+	// A CodeBuddy sub-agent log is a session in deja under
+	// DEJA_INCLUDE_SUBAGENTS=1, a Qwen or Kimi one by default (#5223, #5229), but none of
+	// these clients opens one on its own; the
 	// id deja gives it is one they have never seen (#4483).
 	// Muse's child logs are the same: `muse resume <child>` answers "has no
 	// saved log" (#4710). Gemini CLI's under chats/<parent>/ answer "Invalid
@@ -337,9 +338,15 @@ func resumeCommand(s model.Session) (string, string, error) {
 	if s.Kind == "subagent" && (s.Harness == "kimi" || s.Harness == "qwen" || s.Harness == "muse" || s.Harness == "codebuddy" || s.Harness == "devin" || s.Harness == "gemini") && s.Parent != "" {
 		return "", "", fmt.Errorf("session %s is a sub-agent run, which %s does not reopen on its own — `deja resume %s` reopens the session that spawned it", digest.Short(s.ID), s.Harness, s.Parent)
 	}
+	// A Copilot CLI sub-agent runs inside its parent's log and Copilot marks it
+	// resumable: false; --resume=<agentId> names no session it has (#5216).
+	if s.Kind == "sidechain" && s.Harness == "copilot" && s.Parent != "" {
+		return "", "", fmt.Errorf("session %s is a sub-agent run, which copilot does not reopen on its own — `deja resume %s` reopens the session that spawned it", digest.Short(s.ID), s.Parent)
+	}
 	// Nor a Kimi /btw side question, which runs in a fork of the session it
-	// was asked in (#4484).
-	if s.Kind == "fork" && s.Harness == "kimi" && s.Parent != "" {
+	// was asked in (#4484). A session /fork made is a session of its own, and
+	// `kimi --session` opens it (#5226).
+	if s.Kind == "fork" && s.Harness == "kimi" && s.Parent != "" && sources.KimiSubagentFile(s.Path) {
 		return "", "", fmt.Errorf("session %s is a /btw side question, which kimi does not reopen on its own — `deja resume %s` reopens the session it was asked in", digest.Short(s.ID), s.Parent)
 	}
 	switch s.Harness {
