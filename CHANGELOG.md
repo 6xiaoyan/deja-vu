@@ -109,6 +109,13 @@ clamped to 3 s. After a `kimi -p` run the session is no longer hidden from
 the next session's recall for 20 minutes. In the light theme on a 256-colour
 terminal, key chips no longer melt into their panel.
 
+Semantic search works with models trained with instruction prefixes, such as
+multilingual E5: `DEJA_EMBED_QUERY_PREFIX` and `DEJA_EMBED_PASSAGE_PREFIX` are
+put in front of queries and indexed texts. Vectors made with another model or
+passage prefix are no longer compared with the query: search says so once and
+goes on lexically. A long-running `deja mcp` keeps the parsed vector sidecar
+between semantic searches and lets it go two minutes after the last one.
+
 ## [0.22.2] - 2026-10-17
 
 deja now reads Windsurf / Devin Desktop: Cascade's encrypted conversation

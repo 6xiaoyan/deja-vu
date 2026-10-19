@@ -132,6 +132,10 @@ func maybeRerank(dir string, hits []search.Hit, o search.Options, notice *os.Fil
 		fmt.Fprintln(notice, "deja: semantic rerank unavailable; using lexical order")
 		return hits
 	}
+	if !client.Made(sidecar) {
+		fmt.Fprint(notice, client.MadeNote(sidecar))
+		return hits
+	}
 	// The client waits up to two minutes for a batch while indexing; a query
 	// keeps the half minute it always had.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -166,6 +170,10 @@ func maybeSemantic(dir string, hits []search.Hit, o search.Options, notice *os.F
 	saidSidecarStale = false
 	client, err := embed.New()
 	if err != nil {
+		return hits, false
+	}
+	if !client.Made(sidecar) {
+		fmt.Fprint(notice, client.MadeNote(sidecar))
 		return hits, false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

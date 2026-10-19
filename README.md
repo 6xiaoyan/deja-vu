@@ -420,6 +420,20 @@ deja embed
 `DEJA_EMBED_KEY` takes precedence. `OPENAI_API_KEY` is used automatically only for an
 HTTPS `api.openai.com` URL; it is never implicitly sent to local or third-party endpoints.
 
+Models trained with instruction prefixes, such as the multilingual E5 family, need them on
+both sides. `DEJA_EMBED_QUERY_PREFIX` goes in front of every search query and
+`DEJA_EMBED_PASSAGE_PREFIX` in front of every indexed text; both are empty by default:
+
+```sh
+export DEJA_EMBED_MODEL='multilingual-e5-small'
+export DEJA_EMBED_QUERY_PREFIX='query: '
+export DEJA_EMBED_PASSAGE_PREFIX='passage: '
+deja embed
+```
+
+The passage prefix is part of the sidecar's model name, so changing it embeds everything
+again, and search ignores vectors made with another model or prefix (it says so once).
+
 The sidecar sits beside the index as `.vectors.bin`, not inside `index.db`. Float32 vectors
 cost roughly 4 MB per 1k messages for a 1,024 dimension model. A remote endpoint receives
 the redacted indexed text, truncated to about 2k characters, but never raw source files.

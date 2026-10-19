@@ -9,6 +9,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/vshulcz/deja-vu/internal/index"
 
@@ -206,8 +208,8 @@ func EmbedIndex(dir string, client *Client, keep func(index.Record) bool) (Sidec
 	if err != nil {
 		return Sidecar{}, err
 	}
-	old, _ := Read(dir)
-	if old.Model != client.Model || old.Dim == 0 {
+	old, _ := readFile(Path(dir))
+	if old.Model != client.storedModel() || old.Dim == 0 {
 		old = Sidecar{}
 	}
 	// A vector is carried to the record it was made from, found by identity
@@ -258,14 +260,14 @@ func EmbedIndex(dir string, client *Client, keep func(index.Record) bool) (Sidec
 		}
 		texts := make([]string, n)
 		for i := range pending[:n] {
-			texts[i] = truncate(pending[i].Record.Text)
+			texts[i] = client.PassagePrefix + truncate(pending[i].Record.Text)
 		}
 		vectors, err := client.Embed(context.Background(), texts)
 		if err != nil {
 			// Keep what this run embedded since the last checkpoint: a run
 			// that failed half an hour in lost all of it (#4975).
 			if len(old.Vectors) > 0 {
-				old.Model, old.Generation, old.Covered = client.Model, gen, len(old.Vectors)
+				old.Model, old.Generation, old.Covered = client.storedModel(), gen, len(old.Vectors)
 				_ = write(dir, old)
 			}
 			return Sidecar{}, err
@@ -284,13 +286,13 @@ func EmbedIndex(dir string, client *Client, keep func(index.Record) bool) (Sidec
 		if batches%checkpointEvery == 0 {
 			// Covered is what the sidecar holds so far: doctor reads it as
 			// the share embedded, and the next run embeds only the rest.
-			old.Model, old.Generation, old.Covered = client.Model, gen, len(old.Vectors)
+			old.Model, old.Generation, old.Covered = client.storedModel(), gen, len(old.Vectors)
 			if err := write(dir, old); err != nil {
 				return Sidecar{}, err
 			}
 		}
 	}
-	old.Model, old.Generation, old.Covered = client.Model, gen, len(recs)
+	old.Model, old.Generation, old.Covered = client.storedModel(), gen, len(recs)
 	if err := write(dir, old); err != nil {
 		return Sidecar{}, err
 	}
@@ -333,8 +335,65 @@ func truncate(s string) string {
 	return string(r[:limit-12]) + "\n[truncated]"
 }
 
+// readMemo keeps the last sidecar parsed by this process. One search reads the
+// file for the rerank and again for the semantic tier, and parsing a few hundred
+// megabytes twice is seconds the second time buys nothing for. It is valid for
+// the same file only: path, size and modification time must all still match.
+// A long-lived process (deja mcp) would otherwise hold the vectors, hundreds of
+// megabytes, between questions asked minutes apart, so the memo is dropped after
+// memoIdle without a read.
+var readMemo struct {
+	sync.Mutex
+	path  string
+	size  int64
+	mod   time.Time
+	car   Sidecar
+	timer *time.Timer
+}
+
+var memoIdle = 2 * time.Minute
+
+// touchMemo restarts the idle clock; readMemo must be locked.
+func touchMemo() {
+	if readMemo.timer != nil {
+		readMemo.timer.Stop()
+	}
+	readMemo.timer = time.AfterFunc(memoIdle, func() {
+		readMemo.Lock()
+		readMemo.path, readMemo.car = "", Sidecar{}
+		readMemo.Unlock()
+	})
+}
+
+// Read parses the sidecar of dir. The result is shared between callers of one
+// process and must not be modified; EmbedIndex, which does, uses readFile.
 func Read(dir string) (Sidecar, error) {
-	f, err := os.Open(Path(dir))
+	path := Path(dir)
+	st, err := os.Stat(path)
+	if err != nil {
+		return Sidecar{}, err
+	}
+	readMemo.Lock()
+	if readMemo.path == path && readMemo.size == st.Size() && readMemo.mod.Equal(st.ModTime()) && readMemo.car.Vectors != nil {
+		car := readMemo.car
+		touchMemo()
+		readMemo.Unlock()
+		return car, nil
+	}
+	readMemo.Unlock()
+	car, err := readFile(path)
+	if err != nil {
+		return car, err
+	}
+	readMemo.Lock()
+	readMemo.path, readMemo.size, readMemo.mod, readMemo.car = path, st.Size(), st.ModTime(), car
+	touchMemo()
+	readMemo.Unlock()
+	return car, nil
+}
+
+func readFile(path string) (Sidecar, error) {
+	f, err := os.Open(path)
 	if err != nil {
 		return Sidecar{}, err
 	}
@@ -393,6 +452,9 @@ func Read(dir string) (Sidecar, error) {
 // shared that name, so one could rename a file the other was still writing and
 // leave a sidecar that decodes as nothing (#1319).
 func write(dir string, s Sidecar) error {
+	readMemo.Lock()
+	readMemo.path = ""
+	readMemo.Unlock()
 	return atomicfile.WriteStream(Path(dir), 0o600, func(w io.Writer) error {
 		// An error-remembering writer rather than a check after every field:
 		// the fields are a fixed sequence, the first failure is the one worth

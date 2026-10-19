@@ -19,6 +19,43 @@ type Client struct {
 	Model  string
 	apiKey string
 	HTTP   *http.Client
+	// QueryPrefix and PassagePrefix go in front of a search query and of an
+	// indexed record. Retrieval models of the e5 family are trained on
+	// "query: " and "passage: " and answer worse without them; both are empty
+	// unless DEJA_EMBED_QUERY_PREFIX / DEJA_EMBED_PASSAGE_PREFIX say otherwise,
+	// so an endpoint that wants none sees the text as before.
+	QueryPrefix   string
+	PassagePrefix string
+}
+
+// Made reports whether the vectors of s came from this client's model and
+// passage prefix. Another model's vectors live in another space, and e5 vectors
+// made with "passage: " compared with a query embedded without its "query: "
+// counterpart rank by accident; either way the scores look valid and are not.
+// A sidecar that names no model predates the field and is taken as it is.
+func (c *Client) Made(s Sidecar) bool {
+	return s.Model == "" || s.Model == c.storedModel()
+}
+
+// MadeNote names the mismatch Made found, once per process.
+func (c *Client) MadeNote(s Sidecar) string {
+	if saidModelMismatch {
+		return ""
+	}
+	saidModelMismatch = true
+	return fmt.Sprintf("deja: the vector sidecar was made with %q, the embedder is set to %q — semantic search is off until `deja embed` runs with the same model and DEJA_EMBED_PASSAGE_PREFIX\n", s.Model, c.storedModel())
+}
+
+var saidModelMismatch bool
+
+// storedModel is the name a sidecar is filed under: the model, plus the
+// passage prefix when there is one. Vectors made with another prefix are not
+// the same vectors, and this is what makes a changed prefix embed again.
+func (c *Client) storedModel() string {
+	if c.PassagePrefix == "" {
+		return c.Model
+	}
+	return c.Model + "|" + c.PassagePrefix
 }
 
 var probeURLs = []string{"http://localhost:11434/api/embed", "http://localhost:1234/v1/embeddings"}
@@ -44,13 +81,13 @@ func New() (*Client, error) {
 	if endpoint := os.Getenv("DEJA_EMBED_URL"); strings.EqualFold(strings.TrimSpace(endpoint), "off") {
 		return nil, errNoEmbedEndpoint
 	} else if endpoint != "" {
-		return &Client{URL: endpoint, Model: model, apiKey: embedAPIKey(endpoint), HTTP: &http.Client{Timeout: 120 * time.Second}}, nil
+		return &Client{URL: endpoint, Model: model, apiKey: embedAPIKey(endpoint), HTTP: &http.Client{Timeout: 120 * time.Second}, QueryPrefix: os.Getenv("DEJA_EMBED_QUERY_PREFIX"), PassagePrefix: os.Getenv("DEJA_EMBED_PASSAGE_PREFIX")}, nil
 	}
 	if Off() {
 		return nil, fmt.Errorf("embedding is off (DEJA_EMBED_OFF=1)")
 	}
 	for _, endpoint := range probeURLs {
-		c := &Client{URL: endpoint, Model: model, HTTP: &http.Client{Timeout: 120 * time.Second}}
+		c := &Client{URL: endpoint, Model: model, HTTP: &http.Client{Timeout: 120 * time.Second}, QueryPrefix: os.Getenv("DEJA_EMBED_QUERY_PREFIX"), PassagePrefix: os.Getenv("DEJA_EMBED_PASSAGE_PREFIX")}
 		if err := c.probe(); err == nil {
 			return c, nil
 		}

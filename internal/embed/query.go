@@ -28,6 +28,7 @@ var queryMemo = struct {
 // endpoint and model, so a recall that ranks twice asks once.
 func (c *Client) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
 	text, _ := redact.Text(query)
+	text = c.QueryPrefix + text
 	key := c.URL + "\x00" + c.Model + "\x00" + text
 	queryMemo.Lock()
 	v, ok := queryMemo.vecs[key]
