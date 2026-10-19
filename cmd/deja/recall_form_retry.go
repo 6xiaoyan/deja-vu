@@ -6,7 +6,6 @@ import (
 	"unicode"
 
 	"github.com/vshulcz/deja-vu/internal/index"
-	"github.com/vshulcz/deja-vu/internal/query"
 	"github.com/vshulcz/deja-vu/internal/search"
 )
 
@@ -17,15 +16,10 @@ func formRetryWanted(result index.SearchResult, strictShown int) bool {
 	switch {
 	case result.Tier == search.TierError, result.Directory != "":
 		return false
-	case strictlyMatched(result):
+	case result.Tier == search.TierExact && !result.Stemmed && !result.Fuzzy:
 		return false
 	}
 	return strictShown == 0
-}
-
-// strictlyMatched is an answer every session of which holds every word.
-func strictlyMatched(result index.SearchResult) bool {
-	return result.Tier == search.TierExact && !result.Stemmed && !result.Fuzzy && result.Directory == ""
 }
 
 // formRetryLine hands the agent a Russian query back in the spelling the store
@@ -34,90 +28,73 @@ func strictlyMatched(result index.SearchResult) bool {
 // Agents reword a recall that missed — a quarter of real MCP recalls are such
 // retries — but in 103 transcripts where the CLI's word-forms line named the
 // form to search, the next call used it zero times (#5367). A finished query
-// is a different thing to read than advice about one (#4761). Only for a query
-// with Cyrillic in it, so an English recall pays nothing.
+// is a different thing to read than advice about one (#4761).
 //
-// o is the search the first answer ran — its project, harness and live-session
-// cuts — and every candidate is run through it before the line says anything:
-// the count is what that recall will find, and a spelling that finds nothing
-// new is not offered.
-func formRetryLine(dir, q string, o search.Options, pathScope []string, served []search.Hit) string {
-	if !hasCyrillic(q) {
+// Only the two respellings the catalog settles without a search: ё for е, and
+// a name in the other alphabet. Case forms were tried and left out — the
+// relevance tier already folds Russian endings, and picking the case the store
+// wrote took a search per candidate to get right. No count either: the recall
+// the agent makes next ranks project-first and cuts to its limit, so any
+// number said here would describe a different answer. A query with no
+// Cyrillic in it pays nothing.
+func formRetryLine(dir, q string, o search.Options, served []search.Hit) string {
+	if !hasCyrillic(q) || strings.Contains(q, `"`) {
 		return ""
 	}
-	terms, phrases := query.QueryParts(q)
-	if len(phrases) > 0 {
+	words := strings.FieldsFunc(q, notWordRune)
+	if len(words) == 0 {
 		return ""
 	}
-	skip := make(map[string]bool, len(served))
-	for _, h := range served {
-		skip[h.Session.Harness+":"+h.Session.ID] = true
+	swaps := index.StoreSpellings(dir, words, o)
+	if len(swaps) == 0 {
+		return ""
 	}
-	// A word written capitalized may be a name, and a name is the one word the
-	// store may hold in both alphabets; it gets the other alphabet once no
-	// spelling in this one found anything. Lowercase words get it only where
-	// the store has no form of them at all: мост romanizes to most, an English
-	// word, not the same one.
-	tried := map[string]bool{}
-	for _, names := range []map[string]bool{nil, capitalizedWords(q)} {
-		if names != nil && len(names) == 0 {
-			break
+	to := make(map[string]string, len(swaps))
+	said := make([]string, 0, len(swaps))
+	for _, s := range swaps {
+		// The page already quotes a session in that spelling.
+		if sessionsHolding(served, s.To) > 0 {
+			continue
 		}
-		for _, c := range index.WordFormRetry(dir, terms, o, skip, names) {
-			next := strings.Join(c.Terms, " ")
-			if tried[next] {
-				continue
-			}
-			tried[next] = true
-			if n := formRetryFinds(dir, next, o, pathScope, skip); n > 0 {
-				return fmt.Sprintf("\nIn the forms this store holds, %s %s every word — call recall again with q=%q.\n",
-					pluralSessions(n), holdOrHolds(n), next)
-			}
-		}
+		to[strings.ToLower(s.From)] = s.To
+		said = append(said, fmt.Sprintf("%q as %q", s.From, s.To))
 	}
-	return ""
+	if len(said) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("\nThis store writes %s — call recall again with q=%q.\n",
+		strings.Join(said, ", "), respell(q, to))
 }
 
-// formRetryFinds runs a respelling the way recall will and counts the sessions
-// that hold every word of it; zero when none of them is new to the page.
-func formRetryFinds(dir, next string, o search.Options, pathScope []string, skip map[string]bool) int {
-	vo := o
-	vo.Query = next
-	result, _, hits, _, err := recallRank(dir, next, vo)
-	if err != nil {
-		return 0
-	}
-	if len(pathScope) > 0 {
-		hits = inProjectHits(hits, pathScope)
-	}
-	hits = dropCopiedHits(dir, hits)
-	all := strictlyMatched(result)
-	n, fresh := 0, false
-	for _, h := range hits {
-		if all || h.Strict {
-			n++
-			if !skip[h.Session.Harness+":"+h.Session.ID] {
-				fresh = true
-			}
+// respell swaps whole words of q, leaving the rest as the agent wrote it: the
+// whole sentence ranks better than its bare terms (#2134).
+func respell(q string, to map[string]string) string {
+	var b strings.Builder
+	var word []rune
+	flush := func() {
+		if len(word) == 0 {
+			return
 		}
+		w := string(word)
+		if r, ok := to[strings.ToLower(w)]; ok {
+			w = r
+		}
+		b.WriteString(w)
+		word = word[:0]
 	}
-	if !fresh {
-		return 0
+	for _, r := range q {
+		if notWordRune(r) {
+			flush()
+			b.WriteRune(r)
+			continue
+		}
+		word = append(word, r)
 	}
-	return n
+	flush()
+	return b.String()
 }
 
-// capitalizedWords is the words of q written with a capital, lowercased the
-// way the query terms are.
-func capitalizedWords(q string) map[string]bool {
-	out := map[string]bool{}
-	for _, w := range strings.FieldsFunc(q, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
-		if r := []rune(w); unicode.IsUpper(r[0]) {
-			out[strings.ToLower(w)] = true
-		}
-	}
-	return out
-}
+func notWordRune(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }
 
 func hasCyrillic(s string) bool {
 	for _, r := range s {

@@ -1,47 +1,41 @@
 package index
 
 import (
-	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/vshulcz/deja-vu/internal/query"
 )
 
-// FormRetry is a spelling of the asked query that the store holds: one form
-// per word, all of them in one message of Sessions sessions.
-type FormRetry struct {
-	Terms    []string
-	Sessions int
-	changed  int
+// Respelling is one word of a query and the spelling the store holds for it.
+type Respelling struct {
+	From, To string
 }
 
-// formRetryCombos bounds how many spellings of a query are tried; the walk
-// prunes on an empty intersection, so the common shapes never reach it.
-const formRetryCombos = 1024
+// nameRareMax is how many sessions the other-alphabet spelling of a query's
+// first word may sit in and still read as a name. A first word is capitalized
+// because it starts the sentence as often as because it is a name, and the
+// romanization of an ordinary word is usually a common English one: мост is
+// most, in hundreds of sessions; Кузнецов is kuznetsov, in a few.
+const nameRareMax = 5
 
-// formRetryWords bounds the query length the walk takes on.
-const formRetryWords = 6
-
-// WordFormRetry lists, best first, up to three spellings of a Russian query
-// that the store holds word for word in one message.
+// StoreSpellings finds the words of a Russian query the store writes another
+// way, from the catalog alone — no search, so it costs a lookup per word.
 //
-// The relevance tier folds Russian endings, so a query in the wrong case still
-// ranks; what it cannot do on a store where everyone uses the same nouns is
-// tell the one session that said all of them apart from the hundreds that said
-// most. The exact AND can, but only in the form the store wrote, and the agent
-// cannot know which form that was. The catalog does.
+// Two moves, both of a single word, neither a guess the catalog has not seen:
+// ё for е or е for ё, which the index keeps apart («отчёт» and «отчет» never
+// meet); and a name in the other alphabet («Кузнецов» for kuznetsov,
+// «Shevchenko» for шевченко). A name is a word the asker capitalized whose
+// spelling in its own alphabet the store holds in no form at all — a Russian
+// word the store writes in Russian is not a name, and romanizing it hands
+// back an English word (мост, most). The first word of the query is held to
+// more: its other spelling must be rare.
 //
-// The intersection is the search's own: per message, over the sessions o lets
-// through, so a spelling found only in another project or in the live session
-// is not offered. skip names the sessions ("harness:id") the caller already
-// showed; a spelling that only finds those is no retry. names are the words
-// the asker wrote as a name, which may be spelled in the other alphabet even
-// where the store also writes them in this one. The caller still runs the
-// candidates through the search before it claims anything.
-func WordFormRetry(dir string, terms []string, o query.Options, skip map[string]bool, names map[string]bool) []FormRetry {
-	if len(terms) < 2 || len(terms) > formRetryWords {
-		return nil
-	}
+// words are the query's words as written, in order; o scopes the sessions a
+// spelling has to be found in, so a name only another project holds is not
+// offered to a recall filtered to this one.
+func StoreSpellings(dir string, words []string, o query.Options) []Respelling {
 	if dir == "" {
 		dir = DefaultDir()
 	}
@@ -49,194 +43,143 @@ func WordFormRetry(dir string, terms []string, o query.Options, skip map[string]
 	if err != nil {
 		return nil
 	}
-	options := make([][]string, len(terms))
-	changed := false
-	for i, term := range terms {
-		options[i] = retryOptions(term, catalog, names[term])
-		if len(options[i]) > 1 {
-			changed = true
-		}
-	}
-	if !changed {
-		return nil
-	}
-	m, err := readManifestCached(dir)
-	if err != nil {
-		return nil
-	}
-	servable := servableSids(dir)
-	key := make(map[uint32]string, len(m.Sessions))
-	for _, meta := range m.Sessions {
-		if sessionMetaMatches(meta, o) && (servable == nil || servable[meta.Ord]) {
-			key[meta.Ord] = meta.Harness + ":" + meta.ID
-		}
-	}
+	var metaByOrd map[uint32]SessionMeta
+	var servable map[uint32]bool
+	loaded := false
 	recs := map[string]map[int64]uint32{}
-	for _, opts := range options {
-		for _, f := range opts {
-			if _, ok := recs[f]; ok {
+	// The messages a form is said in, inside the scope o sets.
+	records := func(form string) map[int64]uint32 {
+		if r, ok := recs[form]; ok {
+			return r
+		}
+		if !loaded {
+			loaded = true
+			if m, err := readManifestCached(dir); err == nil {
+				metaByOrd = sessionMetaByOrd(m)
+			}
+			servable = servableSids(dir)
+		}
+		out := map[int64]uint32{}
+		if posts, err := postingsFor(dir, "t"+form); err == nil {
+			for _, p := range posts {
+				if servable != nil && !servable[p.Sid] {
+					continue
+				}
+				if meta, ok := metaByOrd[p.Sid]; ok && sessionMetaMatches(meta, o) {
+					out[p.Off] = p.Sid
+				}
+			}
+		}
+		recs[form] = out
+		return out
+	}
+	var terms []string
+	for _, w := range words {
+		if t := strings.ToLower(w); len(t) >= 2 && !query.IsStopWord(t) {
+			terms = append(terms, t)
+		}
+	}
+	// meets is whether the respelling shares a message with another word of
+	// the query, in any case form the store holds. A spelling that never sits
+	// next to the rest brings back the same ranked page: the review's «отчёт по
+	// счетам» was held, and never beside счетам.
+	meets := func(form, term string) bool {
+		mine := records(form)
+		if len(mine) == 0 {
+			return false
+		}
+		others := 0
+		for _, t := range terms {
+			if t == term {
 				continue
 			}
-			rec := map[int64]uint32{}
-			if posts, err := postingsFor(dir, "t"+f); err == nil {
-				for _, p := range posts {
-					if _, ok := key[p.Sid]; ok {
-						rec[p.Off] = p.Sid
+			others++
+			forms := []string{t}
+			if isCyrToken(t) {
+				forms = append(yoSpellings(t), stemMatches(t, catalog)...)
+			}
+			for _, f := range forms {
+				if !catalog[f] {
+					continue
+				}
+				for off := range records(f) {
+					if _, ok := mine[off]; ok {
+						return true
 					}
 				}
 			}
-			recs[f] = rec
 		}
+		return others == 0
 	}
-	for _, opts := range options {
-		sort.SliceStable(opts, func(a, b int) bool { return len(recs[opts[a]]) < len(recs[opts[b]]) })
+	sessions := func(form string) int {
+		seen := map[uint32]bool{}
+		for _, sid := range records(form) {
+			seen[sid] = true
+		}
+		return len(seen)
 	}
-	var found []FormRetry
-	tried := 0
-	pick := make([]string, len(terms))
-	used := map[string]bool{}
-	var walk func(i int, rin map[int64]uint32)
-	walk = func(i int, rin map[int64]uint32) {
-		if tried >= formRetryCombos {
-			return
+	var out []Respelling
+	done := map[string]bool{}
+	for i, w := range words {
+		term := strings.ToLower(w)
+		if done[term] || query.IsStopWord(term) {
+			continue
 		}
-		if i == len(terms) {
-			tried++
-			n := 0
-			for j := range pick {
-				if pick[j] != terms[j] {
-					n++
-				}
-			}
-			if n == 0 {
-				return
-			}
-			sessions := map[uint32]bool{}
-			fresh := false
-			for _, sid := range rin {
-				sessions[sid] = true
-				if !skip[key[sid]] {
-					fresh = true
-				}
-			}
-			if fresh {
-				found = append(found, FormRetry{Terms: append([]string(nil), pick...), Sessions: len(sessions), changed: n})
-			}
-			return
-		}
-		for _, f := range options[i] {
-			// One word, one place: the same form twice is not a spelling of
-			// two words.
-			if used[f] {
+		done[term] = true
+		if isCyrToken(term) {
+			if to := yoRespelling(term, catalog); to != "" && meets(to, term) {
+				out = append(out, Respelling{w, to})
 				continue
 			}
-			next := recs[f]
-			if rin != nil {
-				next = intersectRecs(rin, next)
-			}
-			if len(next) == 0 {
+		}
+		if !capitalized(w) || len([]rune(term)) < 4 || catalog[term] || heldInAnyForm(term, catalog) {
+			continue
+		}
+		for _, to := range otherScriptSpellings(term) {
+			if !catalog[to] {
 				continue
 			}
-			pick[i] = f
-			used[f] = true
-			walk(i+1, next)
-			used[f] = false
-		}
-	}
-	walk(0, nil)
-	// The narrowest first: a spelling that a handful of sessions share is a
-	// session about the thing; one that hundreds share is the store's
-	// vocabulary. Then the one closest to what was asked.
-	sort.SliceStable(found, func(a, b int) bool {
-		if found[a].Sessions != found[b].Sessions {
-			return found[a].Sessions < found[b].Sessions
-		}
-		if found[a].changed != found[b].changed {
-			return found[a].changed < found[b].changed
-		}
-		return strings.Join(found[a].Terms, " ") < strings.Join(found[b].Terms, " ")
-	})
-	if len(found) > 3 {
-		found = found[:3]
-	}
-	return found
-}
-
-// retryOptions is a word and the spellings of it the catalog holds: its other
-// cases and ё, and the word in the other alphabet only when the store holds
-// none of those, or when the caller says the word is a name (asName). A
-// Russian word the store writes in Russian is usually not a name, and its
-// romanization is an English word more often than not: мост is most, план is
-// plan, лист is list.
-func retryOptions(term string, catalog map[string]bool, asName bool) []string {
-	opts := []string{term}
-	seen := map[string]bool{term: true}
-	add := func(f string) {
-		if !seen[f] && catalog[f] {
-			seen[f] = true
-			opts = append(opts, f)
-		}
-	}
-	if isCyrToken(term) {
-		for _, v := range yoSpellings(term) {
-			add(v)
-			for _, f := range stemMatches(v, catalog) {
-				if wholeForm(term, f) {
-					add(f)
-				}
+			if i == 0 && sessions(to) > nameRareMax {
+				continue
 			}
-			for _, f := range shortNounForms(v) {
-				add(f)
+			if !meets(to, term) {
+				continue
 			}
-		}
-	}
-	if asName || (len(opts) == 1 && !catalog[term]) {
-		for _, f := range otherScriptSpellings(term) {
-			add(f)
-		}
-	}
-	return opts
-}
-
-// wholeForm keeps the forms that are the word with another ending, not a
-// stem the catalog happens to hold: упал does not mean упа, and данные does
-// not mean данн. A form longer than the stem carries an ending and is a word;
-// the bare stem is one only where Russian writes it bare — a noun's consonant
-// stem (лимитами, лимит), not a verb's (упал, упа) and not a cut through a
-// doubled letter (данные, данн).
-func wholeForm(term, form string) bool {
-	if len([]rune(form)) < 3 {
-		return false
-	}
-	stem, end := term, ""
-	for _, e := range cyrEndings {
-		if strings.HasSuffix(term, e) && len([]rune(term))-len([]rune(e)) >= 3 {
-			stem, end = strings.TrimSuffix(term, e), e
+			out = append(out, Respelling{w, to})
 			break
 		}
 	}
-	if form != stem {
-		return true
-	}
-	if cyrVerbEndings[end] {
-		return false
-	}
-	rs := []rune(stem)
-	last := rs[len(rs)-1]
-	return !strings.ContainsRune("аеёиоуыэюяйьъ", last) && rs[len(rs)-2] != last
+	return out
 }
 
-func intersectRecs(a, b map[int64]uint32) map[int64]uint32 {
-	if len(a) > len(b) {
-		a, b = b, a
-	}
-	out := make(map[int64]uint32, len(a))
-	for k, v := range a {
-		if _, ok := b[k]; ok {
-			out[k] = v
+// yoRespelling is the word with ё swapped for е or back, when the catalog
+// holds that spelling.
+func yoRespelling(term string, catalog map[string]bool) string {
+	for _, v := range yoSpellings(term)[1:] {
+		if catalog[v] {
+			return v
 		}
 	}
-	return out
+	return ""
+}
+
+// heldInAnyForm is whether the store writes the word in its own alphabet at
+// all: as it is, with ё or е, or in another case.
+func heldInAnyForm(term string, catalog map[string]bool) bool {
+	if !isCyrToken(term) {
+		return false
+	}
+	for _, v := range yoSpellings(term) {
+		if catalog[v] || len(stemMatches(v, catalog)) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func capitalized(w string) bool {
+	r, _ := utf8.DecodeRuneInString(w)
+	return unicode.IsUpper(r)
 }
 
 // cyrToLat is one common romanization per letter, with the alternatives a
@@ -283,21 +226,16 @@ func otherScriptSpellings(term string) []string {
 		return nil
 	}
 	if isCyrToken(term) {
-		out := []string{""}
-		for _, r := range term {
-			alts, ok := cyrToLat[r]
-			if !ok {
-				return nil
-			}
-			var next []string
-			for _, s := range out {
-				for _, a := range alts {
-					if len(next) < spellingCap {
-						next = append(next, s+a)
+		out := romanize(term)
+		// A surname's -ий and -ый are usually written -y: Шиманский, Shimansky.
+		for _, end := range []string{"ий", "ый"} {
+			if stem, ok := strings.CutSuffix(term, end); ok {
+				for _, s := range romanize(stem) {
+					if len(out) < 2*spellingCap {
+						out = append(out, s+"y")
 					}
 				}
 			}
-			out = next
 		}
 		return out
 	}
@@ -306,6 +244,33 @@ func otherScriptSpellings(term string) []string {
 			return nil
 		}
 	}
+	return cyrillicReadings(term)
+}
+
+// romanize spells a Cyrillic word in Latin letters, in the few ways each
+// letter usually goes.
+func romanize(term string) []string {
+	out := []string{""}
+	for _, r := range term {
+		alts, ok := cyrToLat[r]
+		if !ok {
+			return nil
+		}
+		var next []string
+		for _, s := range out {
+			for _, a := range alts {
+				if len(next) < spellingCap {
+					next = append(next, s+a)
+				}
+			}
+		}
+		out = next
+	}
+	return out
+}
+
+// cyrillicReadings reads a romanized word back into Cyrillic.
+func cyrillicReadings(term string) []string {
 	var out []string
 	var walk func(rest, acc string)
 	walk = func(rest, acc string) {
@@ -351,26 +316,6 @@ func yoSpellings(term string) []string {
 		v := append([]rune(nil), rs...)
 		v[i] = 'ё'
 		out = append(out, string(v))
-	}
-	return out
-}
-
-// shortNounEndings are the hard-stem noun cases.
-var shortNounEndings = []string{"а", "у", "е", "ом", "ем", "и", "ы", "ов", "ей", "ам", "ами", "ах"}
-
-// shortNounForms covers the three-letter nouns stemMatches leaves alone
-// (кэш, лог, баг): its four-rune floor is there for the relevance tier, which
-// has no catalog gate and would fan что and как out into other words. Here
-// every form still has to be in the catalog and meet the query's other words,
-// so a consonant-final word gets its noun cases.
-func shortNounForms(term string) []string {
-	rs := []rune(term)
-	if len(rs) != 3 || strings.ContainsRune("аеёиоуыэюяйьъ", rs[2]) {
-		return nil
-	}
-	out := make([]string, 0, len(shortNounEndings))
-	for _, e := range shortNounEndings {
-		out = append(out, term+e)
 	}
 	return out
 }

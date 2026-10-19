@@ -8,12 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 An MCP recall in Russian that misses ends with a query in the spelling the
-store holds, ready to pass back: `call recall again with q="лимиты запросов
-шлюзу"`. It picks another case of each word or ё for е, and the Latin or
-Cyrillic spelling only for a name (a capitalized word, or one the store has
-in no form). The count it states is what that recall finds under the same
-project and harness filters; an answer that already holds every word, and an
-English query, get no line (#5367).
+store holds, ready to pass back: `This store writes "отчет" as "отчёт" — call
+recall again with q="отчёт по счетам"`. Two swaps, both from the index's word
+list: ё for е or back, and a capitalized name the store keeps only in the other
+alphabet (Кузнецов as kuznetsov). The swapped word has to share a message with
+another word of the query in the sessions the recall's filters allow. No line
+when the answer already holds every word, and none for English queries
+(#5367).
 
 A sub-agent run is a session of its own under the session that spawned it.
 Sub-agents are now read by default as their task, answer and edits, the way

@@ -1541,7 +1541,8 @@ func recallTextResultIn(dir, q, harness, project string, limit, offset, budget i
 		// accepted and then ignored.
 		o.Projects = []string{project}
 	}
-	// The search as the caller scoped it, for the respelling to run again.
+	// The search as the caller scoped it: a respelling only another project
+	// holds is no retry for this one.
 	asked := o
 	result, o2, hits, policyHidden, err := recallRank(dir, q, o)
 	if err != nil {
@@ -1587,7 +1588,7 @@ func recallTextResultIn(dir, q, harness, project string, limit, offset, budget i
 	if len(hits) == 0 {
 		answer := emptyRecallAnswerPolicy(dir, q, policyHidden)
 		if policyHidden == 0 && offset == 0 {
-			if line := formRetryLine(dir, q, asked, pathScope, nil); len(answer)+len(line) <= budget {
+			if line := formRetryLine(dir, q, asked, nil); len(answer)+len(line) <= budget {
 				answer += line
 			}
 		}
@@ -1914,7 +1915,7 @@ func recallTextResultIn(dir, q, harness, project string, limit, offset, budget i
 	retry := ""
 	if offset == 0 {
 		if formRetryWanted(result, strictShown) {
-			retry = formRetryLine(dir, q, asked, pathScope, hits[:served])
+			retry = formRetryLine(dir, q, asked, hits[:served])
 		}
 	}
 	deep = retry + deep
