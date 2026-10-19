@@ -108,6 +108,9 @@ Codex no longer warns on every start that deja's SessionEnd timeout was
 clamped to 3 s. After a `kimi -p` run the session is no longer hidden from
 the next session's recall for 20 minutes. In the light theme on a 256-colour
 terminal, key chips no longer melt into their panel.
+ё and е are one letter in the index and in queries, so «ещё» finds a session
+that says «еще» and the other way round. The index format moves to version 89,
+so the first run rebuilds it.
 
 Semantic search works with models trained with instruction prefixes, such as
 multilingual E5: `DEJA_EMBED_QUERY_PREFIX` and `DEJA_EMBED_PASSAGE_PREFIX` are

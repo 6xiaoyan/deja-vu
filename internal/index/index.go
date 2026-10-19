@@ -758,7 +758,9 @@ import (
 // 87: an OpenClaw heartbeat poll answered HEARTBEAT_OK is not a turn (#5326).
 // 88: an OpenClaw JSONL sub-agent whose spawning window was archived as .zst
 // keeps it as its parent (#5340).
-const version = 88
+// 89: ё is filed as е, and queries fold it the same way, so «ещё» and «еще»
+// are one word.
+const version = 89
 
 // onDiskFormat is how the store is laid out on disk — the record encoding, the
 // bucket encoding, the manifest's own shape. It moves only when a reader of an
