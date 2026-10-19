@@ -77,7 +77,9 @@ func checkCompletionDispatch(t *testing.T, cases []completionDispatchCase) {
 					for _, line := range strings.Split(string(out), "\n") {
 						line, _, _ = strings.Cut(line, "\t")
 						line, _, _ = strings.Cut(line, "[")
-						got[strings.TrimSuffix(strings.TrimSpace(line), "=")] = true
+						// zsh marks a repeatable flag with a leading `*`; the user still types --tag.
+						line = strings.TrimPrefix(strings.TrimSpace(line), "*")
+						got[strings.TrimSuffix(line, "=")] = true
 					}
 					for _, want := range tc.want {
 						if !got[want] {
