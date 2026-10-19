@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -103,6 +104,28 @@ func TestHelpTakesACommand(t *testing.T) {
 	}
 	if _, err := captureRun(t, "help", "stauts"); err == nil || !strings.Contains(err.Error(), "`deja help` lists them") {
 		t.Fatalf("an unknown topic: %v", err)
+	}
+}
+
+// The footers of tests, recap and secrets point at --limit 0, so their help says
+// what it does and the default it raises (#5079).
+func TestHelpSaysWhatLimitZeroDoes(t *testing.T) {
+	hermeticEnv(t)
+	for _, tc := range []struct {
+		cmd  string
+		want string
+	}{
+		{"tests", fmt.Sprintf("--limit shows %d tests by default; --limit 0 shows them all", testsDefaultLimit)},
+		{"recap", fmt.Sprintf("--limit shows %d sessions by default; --limit 0 shows them all", recapDefaultSessions)},
+		{"secrets", fmt.Sprintf("--limit shows %d sessions by default; --limit 0 shows them all", secretsDefaultLimit)},
+	} {
+		out, err := captureRun(t, "help", tc.cmd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Join(strings.Fields(out), " "); !strings.Contains(got, tc.want) {
+			t.Errorf("deja help %s lacks %q:\n%s", tc.cmd, tc.want, out)
+		}
 	}
 }
 
