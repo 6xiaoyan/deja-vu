@@ -234,6 +234,52 @@ func TestTakingAKeyOutAfterALineCommentKeepsTheBrace(t *testing.T) {
 	}
 }
 
+// A comment between an entry and its trailing comma stays when the entry is
+// taken out, and the comma after the comment goes so the object still parses.
+func TestTakingAKeyOutWithCommentBeforeCommaLeavesValidJSON(t *testing.T) {
+	cases := []struct {
+		name    string
+		comment string
+		text    string
+	}{
+		{
+			name:    "block comment between entry and comma",
+			comment: "/* deja's */",
+			text:    "{\n  \"mcpServers\": {\n    \"deja\": {\"args\": [\"mcp\"], \"command\": \"/usr/local/bin/deja\"} /* deja's */,\n    \"other\": {\"command\": \"x\"}\n  }\n}",
+		},
+		{
+			name:    "line comment between entry and comma",
+			comment: "// deja's",
+			text:    "{\n  \"mcpServers\": {\n    \"deja\": {\"args\": [\"mcp\"], \"command\": \"/usr/local/bin/deja\"} // deja's\n,\n    \"other\": {\"command\": \"x\"}\n  }\n}",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := jsoncSetEntry(tc.text, "mcpServers", "deja", "", true, 0)
+			if err != nil {
+				t.Fatalf("jsoncSetEntry failed: %v", err)
+			}
+			if !strings.Contains(got, tc.comment) {
+				t.Errorf("comment %q was lost:\n%s", tc.comment, got)
+			}
+			var root map[string]any
+			if err := json.Unmarshal([]byte(stripJSONComments(got)), &root); err != nil {
+				t.Fatalf("not valid JSONC after removing entry: %v\n%s", err, got)
+			}
+			servers, ok := root["mcpServers"].(map[string]any)
+			if !ok {
+				t.Fatalf("mcpServers is missing or not an object: %v", root)
+			}
+			if _, hasDeja := servers["deja"]; hasDeja {
+				t.Errorf("deja was not removed")
+			}
+			if _, hasOther := servers["other"]; !hasOther {
+				t.Errorf("other was lost")
+			}
+		})
+	}
+}
+
 // A null ui in a commented file is refused rather than written beside.
 func TestAJSONCStatusLineUnderANullParentIsRefused(t *testing.T) {
 	hermeticEnv(t)

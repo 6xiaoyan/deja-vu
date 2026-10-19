@@ -226,6 +226,15 @@ func cutEntry(text string, cut [2]int) string {
 	if i >= 0 && blank[i] == ',' {
 		return out[:i] + out[i+1:]
 	}
+	k := cut[1]
+	for k < len(blank) && (blank[k] == ' ' || blank[k] == '\t' || blank[k] == '\n' || blank[k] == '\r') {
+		k++
+	}
+	if k < len(blank) && blank[k] == ',' {
+		cutLen := cut[1] - cut[0]
+		pos := k - cutLen
+		return out[:pos] + out[pos+1:]
+	}
 	return out
 }
 
