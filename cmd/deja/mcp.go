@@ -1583,7 +1583,13 @@ func recallTextResultIn(dir, q, harness, project string, limit, offset, budget i
 	// same as on the search screen (#5320, #5335).
 	hits = dropCopiedHits(dir, hits)
 	if len(hits) == 0 {
-		return emptyRecallAnswerPolicy(dir, q, policyHidden), 0, 0, nil, nil, nil
+		answer := emptyRecallAnswerPolicy(dir, q, policyHidden)
+		if policyHidden == 0 && offset == 0 {
+			if line := formRetryLine(dir, q, true, nil); len(answer)+len(line) <= budget {
+				answer += line
+			}
+		}
+		return answer, 0, 0, nil, nil, nil
 	}
 	// Before the page is cut, not after: demoting inside the page is a no-op
 	// when every hit on it was rejected, and then the approaches the reader did
@@ -1901,6 +1907,13 @@ func recallTextResultIn(dir, q, harness, project string, limit, offset, budget i
 		deep = fmt.Sprintf("\nSession %s matched %d times and only three of them fit here — call recall_context with that id to read the rest.\n",
 			deepest.Session.ID, deepest.Count)
 	}
+	// A Russian query in a form the store did not write, as a query in the
+	// form it did (#5367).
+	retry := ""
+	if offset == 0 {
+		retry = formRetryLine(dir, q, formRetryWanted(result, total), hits[:served])
+	}
+	deep = retry + deep
 	// The paging line is the instruction, not the evidence: appending it before
 	// the trim made a full page drop the one thing that says how to reach the
 	// rest, exactly where offset is meant to be used (#1726). Trim the excerpts
