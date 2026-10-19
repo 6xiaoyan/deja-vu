@@ -8,9 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 A sub-agent run is a session of its own under the session that spawned it.
-Cursor, Qwen, Kimi and goose sub-agents are now read by default as their task,
-answer and edits, the way Claude Code's are, so `deja blame` names the
-sub-agent that wrote a line; `DEJA_INCLUDE_SUBAGENTS=0` leaves them out.
+Sub-agents are now read by default as their task, answer and edits, the way
+Claude Code's are, so `deja blame` names the sub-agent that wrote a line;
+`DEJA_INCLUDE_SUBAGENTS=0` leaves them out and `=1` takes the whole run in
+every reader that marks one, Gemini, Hermes, OpenClaw, Codex, opencode, Grok,
+pi, Crush, Kiro, Devin, dsh, Muse and CodeBuddy included (#5301). A CodeWhale
+fork is a fork, not a sub-agent, and is read whole. `deja resume` on a Cursor CLI
+subagent names the parent to resume instead of saying the child left
+cursor-agent's store; Hermes and OpenClaw children reopen as they are (#5303).
 Copilot CLI task runs are split out of the parent's log, OpenClaw children and
 Hermes delegates hang under their parent whatever source they ran under, and
 Gemini, Kimi and OpenClaw sub-agents are titled by their task rather than by
@@ -44,6 +49,65 @@ opencode. A read-only file is refused before anything is written, Cline and
 Kimi included. pi 0.99 and later need no MCP adapter, and
 `PI_CODING_AGENT_DIR` is followed. OpenClaw install and doctor say when
 `plugins.allow` or `plugins.enabled` keeps deja's plugin off.
+
+OpenClaw, Codex, Hermes and Grok start MCP servers with only a few
+variables, so `deja mcp` there lost a moved index (`DEJA_INDEX_DIR`,
+`XDG_CACHE_HOME`), built a second one and answered recall with the asking
+session. Their MCP entries now name the launcher the hooks run through; a
+one-line Hermes entry is written out as a block with its keys and comment kept.
+
+An OpenClaw heartbeat poll no longer stamps the main DM as in use, which hid
+it from recall in the user's other sessions for twenty minutes after each poll,
+and a poll and its `NO_REPLY` are no longer indexed as a session.
+
+`openclaw chat` and `openclaw tui --local` run no plugin or hook, so deja
+cannot give them a digest or per-prompt recall; install and doctor now say
+so. MCP recall there leaves out the session OpenClaw wrote to last when no
+hook stamped one, instead of answering with the conversation asking.
+
+`deja resume` and `deja handoff --to openclaw` open OpenClaw's gateway TUI
+(`openclaw tui`) when a gateway answers, where deja's plugin and hooks run,
+and say so when only the hookless local mode (`openclaw chat`) is there.
+
+`deja install openclaw` and `openclaw-auto` refuse a section openclaw.json
+keeps in its own file (`$include`) and say what to add there by hand. Writing
+beside the `$include` made OpenClaw's own edits of that section land in
+openclaw.json instead of the included file. The launcher, plugin and hook pack
+those entries name are written before the refusal, doctor reads the included
+files, switches and the conversation-access grant there included, and names
+the file a switch is in, and uninstall names the entries it leaves there. An upgrade that moves
+an entry to the launcher no longer says it replaced the same deja.
+
+An OpenClaw sub-agent on a JSONL store stays under the window that spawned
+it after a `/new`; it was filed under the key's newer session.
+
+A fork's source stays on the fork's page when the source went on after the
+fork, and recall, the per-prompt hook and the start digest give the fork only
+what the source did from the fork point on. Search drops a fork's copied hits
+before the cap, so they no longer take a slot or count in the total, and `deja
+last` marks a fork beside its source. Blame no longer credits a Claude
+`--fork-session` copy with a line its source wrote, and file blame lists the
+session that wrote the file above one that only named it.
+
+The pre-edit note counts a fork's source only for edits after the fork, and a
+Claude Code `--resume <id> --fork-session` fork leaves its source out of the
+first prompt's recall and the first tool's note too; deja reads the source id
+from claude's command line (not on Windows).
+
+A transcript with a new mtime and the same size is no longer re-read, and one
+file that can't be appended no longer sends the rest of the pass through a full
+re-parse: a 400 MB transcript that grew 281 KB next to a touched 100 MB one
+took 25 s to index, now about 2 s.
+
+OpenClaw: a heartbeat answered with `HEARTBEAT_OK` is not a session either; a
+sub-agent whose spawning window was archived as `.zst` keeps its parent, and
+finding the spawning window reads each transcript once instead of once per
+child.
+
+Codex no longer warns on every start that deja's SessionEnd timeout was
+clamped to 3 s. After a `kimi -p` run the session is no longer hidden from
+the next session's recall for 20 minutes. In the light theme on a 256-colour
+terminal, key chips no longer melt into their panel.
 
 ## [0.22.2] - 2026-10-17
 

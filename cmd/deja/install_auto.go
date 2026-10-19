@@ -57,6 +57,19 @@ var codexHookWiring = []hookWire{
 	{"SessionEnd", "hook-session-end", ""},
 }
 
+// codexHookTimeout is the timeout deja writes for a codex hook, in seconds.
+// codex-cli 0.149.0 caps SessionEnd at 3 s and warns on every start when the
+// file asks for more (#5126); the hook only drops the live stamp, so 3 s is
+// plenty. Every other event keeps 10.
+func codexHookTimeout(event string) int {
+	if event == "SessionEnd" {
+		return codexSessionEndCap
+	}
+	return 10
+}
+
+const codexSessionEndCap = 3
+
 func installCodexHooks(exe string, uninstall bool) (installResult, error) {
 	// Use CodexHome() (honours CODEX_HOME / DEJA_CODEX_ROOT) rather than a raw
 	// ~/.codex join, so a sandboxed install stays sandboxed and a non-default
@@ -132,6 +145,12 @@ func updateCodexHook(root map[string]any, event, cmd, matcher string, uninstall 
 			}
 			found = true
 			adoptCodexHookEntry(entry, cmd, event)
+			// An install from before #5126 wrote 10 here, which codex clamps
+			// with a warning on every start. A lower value the reader set
+			// stays.
+			if event == "SessionEnd" {
+				capHookTimeout(entry, cmd, codexSessionEndCap)
+			}
 			// The matcher is part of the wiring, not a user setting, so an
 			// upgrade has to rewrite it: the SessionStart entry written when
 			// this meant "startup|resume" went on missing every compaction
@@ -146,7 +165,7 @@ func updateCodexHook(root map[string]any, event, cmd, matcher string, uninstall 
 		kept = append(kept, entryAny)
 	}
 	if !uninstall && !found {
-		h := map[string]any{"type": "command", "command": cmd, "timeout": 10}
+		h := map[string]any{"type": "command", "command": cmd, "timeout": codexHookTimeout(event)}
 		// Codex surfaces statusMessage in its hook run summary.
 		if msg := hookStatusMessage(event); msg != "" {
 			h["statusMessage"] = msg
@@ -176,6 +195,21 @@ func adoptHookTimeout(entry map[string]any, cmd string, timeout int) {
 			continue
 		}
 		h["timeout"] = timeout
+	}
+}
+
+// capHookTimeout lowers the timeout on the hook deja owns inside an entry to
+// limit when it asks for more, or says nothing at all.
+func capHookTimeout(entry map[string]any, cmd string, limit int) {
+	hs, _ := entry["hooks"].([]any)
+	for _, hAny := range hs {
+		h, _ := hAny.(map[string]any)
+		if h == nil || h["type"] != "command" || hookCommandKindOf(h["command"], cmd) != hookDejas {
+			continue
+		}
+		if t, ok := h["timeout"].(float64); !ok || t > float64(limit) {
+			h["timeout"] = limit
+		}
 	}
 }
 
@@ -1231,6 +1265,13 @@ func kimiHooksUpdate(path, exe string, uninstall bool) (old, next []byte, err er
 // rides the next prompt. The payload names only the session, hence --harness.
 // SessionEnd: the session is over, so its live stamp goes, and the next
 // session's MCP recall can answer with it now rather than in twenty minutes.
+// Kimi Code 2.2 fires it only when a session is closed, and `kimi -p` exits
+// without closing one, so a finished print run stayed hidden for the whole
+// window (#5145). Stop ends every turn, print mode's last one included, so it
+// clears the stamp too; the next turn's UserPromptSubmit stamps again. A turn
+// that opens without a prompt — a background task's notice — or one a
+// sub-agent's Stop cleared mid-way is stamped again by PreToolUse just before
+// it calls deja's MCP tool, so recall still leaves the asking session out.
 // A failed command's fix pair: Kimi fires PostToolUse(Failure) and drops what
 // they print, so the pair waits for the session's next prompt
 // (hook_deferred.go). The payload is snake_case with the shell tool named
@@ -1247,6 +1288,8 @@ var kimiHooks = []struct {
 	{"UserPromptSubmit", "", []string{"hook-prompt", "--plain"}},
 	{"PreCompact", "", []string{"hook-precompact", "--harness", "kimi"}},
 	{"SessionEnd", "", []string{"hook-session-end"}},
+	{"Stop", "", []string{"hook-session-end"}},
+	{"PreToolUse", "^mcp__deja__", []string{"hook-mcp-call"}},
 	{"PostToolUse", "Bash", []string{"hook-tool-after", "--defer"}},
 	{"PostToolUseFailure", "Bash", []string{"hook-tool-after", "--defer"}},
 	{"PreToolUse", "^(Edit|Write)$", []string{"hook-tool", "--defer"}},
@@ -1257,8 +1300,8 @@ var kimiHooks = []struct {
 // line from any path, timeout 30, nothing else. Kimi Code's login and logout
 // write config.toml back from its parsed form, which keeps the tables and
 // drops every comment, the markers with them. Keyed on the marker alone,
-// uninstall then left all seven hooks running a deja-hook it had deleted, and
-// install added seven more beside them. A rule the reader wrote around deja's
+// uninstall then left every hook running a deja-hook it had deleted, and
+// install added a second set beside them. A rule the reader wrote around deja's
 // hook differs in one of those and stays.
 func removeUnmarkedKimiDejaHooks(s, exe string) string {
 	lines := strings.Split(s, "\n")

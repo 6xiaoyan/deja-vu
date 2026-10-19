@@ -53,7 +53,7 @@ func defaultDoctorVersionLookup() doctorVersionLookup {
 func countSubagentFiles(seen []string) int {
 	n := 0
 	for _, p := range seen {
-		if sources.IsSubagentPath(p) || sources.IsPrimeChildPath(p) || sources.KimiSubagentRun(p) {
+		if sources.IsSubagentPath(p) || sources.IsPrimeChildPath(p) || sources.KimiSubagentRun(p) || sources.MuseSubagentFile(p) {
 			n++
 		}
 	}
@@ -887,7 +887,7 @@ func doctorHarnessStores(w io.Writer, dir string, all bool) {
 			// wanted those transcripts indexed set the thing the line said
 			// was already set. It is the remedy, and it reads as one now.
 			detail += fmt.Sprintf(", %d subagent transcripts skipped — set DEJA_INCLUDE_SUBAGENTS=1 to index them", byRule)
-		} else if short := countSubagentFiles(seen); short > 0 && os.Getenv("DEJA_INCLUDE_SUBAGENTS") != "1" {
+		} else if short := countSubagentFiles(seen); short > 0 && !sources.SubagentsWhole() {
 			// Read, but not in full: what a reader needs to know is which half
 			// of those files is searchable, and how to get the rest (#3009).
 			detail += fmt.Sprintf(", %d subagent transcripts read as task, answer and what they changed — set DEJA_INCLUDE_SUBAGENTS=1 for the whole run", short)
@@ -1186,7 +1186,7 @@ func doctorHarnessStores(w io.Writer, dir string, all bool) {
 	printFilesBesideIn("reasonix", rxRoot, sources.ReasonixSessionDirsAll(), false, doctorExists(rxRoot),
 		sources.ReasonixSessionFiles(), sources.ReasonixSidecarFiles()...)
 	// Muse keeps cron.db, goals.db and spilled tool output beside each log, and
-	// its subagents' logs one level down, read only when asked for.
+	// its subagents' logs one level down, left out with DEJA_INCLUDE_SUBAGENTS=0.
 	museRoots := sources.MuseRoots()
 	printFilesSkippingIn("muse", strings.Join(museRoots, string(os.PathListSeparator)), museRoots, doctorAnyExists(museRoots),
 		sources.MuseSessionFiles(), sources.MuseSubagentFile, sources.MuseSidecarFiles()...)
@@ -1293,7 +1293,7 @@ func doctorCursorDetail(sqlite bool) string {
 			short++
 		}
 	}
-	if short > 0 && os.Getenv("DEJA_INCLUDE_SUBAGENTS") != "1" {
+	if short > 0 && !sources.SubagentsWhole() {
 		cli += fmt.Sprintf(", %d subagent transcripts read as task, answer and what they changed — set DEJA_INCLUDE_SUBAGENTS=1 for the whole run", short)
 	}
 	parts := []string{cli}
@@ -1646,7 +1646,7 @@ func dejaEntrySwitchedOff(client, path string) bool {
 	if !entrySwitchHonored(client) {
 		return false
 	}
-	b, err := readConfig(path)
+	b, err := doctorReadConfig(path)
 	if err != nil {
 		return false
 	}
@@ -1695,7 +1695,7 @@ func dejaCommandMissing(path string) string {
 // thing in TOML, YAML and JSONC, and adding a parser per format to answer one
 // question is not worth the surface.
 func dejaCommandIn(path string) string {
-	b, err := readConfig(path)
+	b, err := doctorReadConfig(path)
 	if err != nil {
 		return ""
 	}
@@ -2437,9 +2437,11 @@ func doctorOpencodeConfigPath() string {
 	return path
 }
 
-// doctorOpenClawWired checks openclaw.json's nested mcp.servers map.
+// doctorOpenClawWired checks openclaw.json's nested mcp.servers map, with
+// any $include read in: an entry added by hand to the included file is the
+// wiring `deja install openclaw` asks for there (#5331).
 func doctorOpenClawWired(path string) bool {
-	b, err := readConfig(path)
+	b, err := doctorReadConfig(path)
 	if err != nil {
 		return false
 	}

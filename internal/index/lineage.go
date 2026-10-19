@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/vshulcz/deja-vu/internal/model"
 	"github.com/vshulcz/deja-vu/internal/nfcfold"
@@ -24,9 +25,10 @@ import (
 // that asked it (#4548).
 //
 // And a fork's source: the fork opens with a copy of its turns, so the source
-// handed back is the fork's own opening under another id (#4549, #4251). The
-// harness that says which session it forked from is believed. Claude Code and
-// opencode say nothing, and there sessions that open on the same turn at the
+// handed back is the fork's own opening under another id (#4549, #4251). A
+// source the fork names is left out by the same rule as a copy it matched: when
+// the fork holds the source's last turn (#5293). Claude Code and opencode say
+// nothing, and there sessions that open on the same turn at the
 // same millisecond are copies of one conversation. Only the copy the asker
 // already holds is left out: a session whose last record the asker has too.
 // A fork that went on past what it copied holds work its source never saw, so
@@ -39,7 +41,8 @@ import (
 // Read off the manifest, which recall has already loaded: no record is read,
 // so the cost is one pass over the sessions in memory.
 func Lineage(dir string, ids map[string]bool, heads ...model.Session) map[string]bool {
-	return lineage(dir, ids, heads, nil)
+	out, _ := lineage(dir, ids, heads, nil)
+	return out
 }
 
 // LineageWhole is Lineage with askers the index does not hold yet read off
@@ -49,10 +52,11 @@ func Lineage(dir string, ids map[string]bool, heads ...model.Session) map[string
 // The record is matched on role and time: the text the index keeps is redacted
 // and the asker's is not.
 func LineageWhole(dir string, ids map[string]bool, wholes ...model.Session) map[string]bool {
-	return lineage(dir, ids, nil, wholes)
+	out, _ := lineage(dir, ids, nil, wholes)
+	return out
 }
 
-func lineage(dir string, ids map[string]bool, heads, wholes []model.Session) map[string]bool {
+func lineage(dir string, ids map[string]bool, heads, wholes []model.Session) (map[string]bool, map[string]time.Time) {
 	out := make(map[string]bool, len(ids))
 	for id := range ids {
 		if id != "" {
@@ -60,18 +64,30 @@ func lineage(dir string, ids map[string]bool, heads, wholes []model.Session) map
 		}
 	}
 	if len(out) == 0 {
-		return nil
+		return nil, nil
 	}
 	// A head is an asker the index has not seen yet, so it is the newer of any
 	// session it opens alike with: everything indexed it matches, it copied.
 	// An indexed asker is checked against what it holds.
 	headOpenings := map[uint64]bool{}
 	askers := map[uint64][]SessionMeta{}
+	// A spawned agent's parent is its own work. A fork's source is left out
+	// only when the fork holds the source's last turn: a source that went on
+	// after the fork has work the fork never saw (#5293). A head is checked
+	// against nothing, being a fork's first prompts, before its source can
+	// have gone on.
 	parentOf := func(kind, parent string) {
 		if parent != "" && (spawnedKind(kind) || kind == "fork") {
 			out[parent] = true
 		}
 	}
+	type wholeFork struct {
+		harness, parent string
+		turns           map[string]bool
+		started         time.Time
+	}
+	var wholeForks []wholeFork
+	var metaForks []SessionMeta
 	for _, h := range heads {
 		if ids[h.ID] {
 			parentOf(h.Kind, h.Parent)
@@ -85,25 +101,70 @@ func lineage(dir string, ids map[string]bool, heads, wholes []model.Session) map
 		if !ids[w.ID] {
 			continue
 		}
-		parentOf(w.Kind, w.Parent)
+		if w.Kind == "fork" && w.Parent != "" {
+			wholeForks = append(wholeForks, wholeFork{w.Harness, w.Parent, wholeTurns(w), firstTimed(w)})
+		} else {
+			parentOf(w.Kind, w.Parent)
+		}
 		if o := SessionOpening(w); o != 0 {
 			wholeOpenings[o] = append(wholeOpenings[o], wholeTurns(w))
 		}
 	}
 	m, err := readManifestCached(dir)
 	if err != nil {
-		return out
+		// Nothing indexed to hide, so a named source costs nothing.
+		for _, wf := range wholeForks {
+			out[wf.parent] = true
+		}
+		return out, nil
 	}
 	for _, meta := range m.Sessions {
 		if ids[meta.ID] {
-			parentOf(meta.Kind, meta.Parent)
+			if meta.Kind == "fork" {
+				metaForks = append(metaForks, meta)
+			} else {
+				parentOf(meta.Kind, meta.Parent)
+			}
 			if meta.Opening != 0 {
 				askers[meta.Opening] = append(askers[meta.Opening], meta)
 			}
 		}
 	}
-	own := spawnedFamily(m, ids, out)
 	held := heldRecords(dir, m)
+	byID := map[string][]SessionMeta{}
+	for _, meta := range m.Sessions {
+		byID[meta.ID] = append(byID[meta.ID], meta)
+	}
+	// parentMeta is the session a fork names, in the fork's own harness.
+	parentMeta := func(harness, id string) (SessionMeta, bool) {
+		for _, p := range byID[id] {
+			if p.Harness == harness {
+				return p, true
+			}
+		}
+		return SessionMeta{}, false
+	}
+	// A fork holds its source's end when it carries the source's last turn,
+	// or when it started after that turn: Hermes and others copy with new
+	// times, so a copy made after the source's last turn holds all of it.
+	// A source the index does not hold in the fork's harness has nothing to
+	// hide.
+	forkHolds := func(fork SessionMeta) bool {
+		p, ok := parentMeta(fork.Harness, fork.Parent)
+		return !ok || held(fork, p) || endedBy(dir, m, p, startedAt(dir, m, fork))
+	}
+	for _, wf := range wholeForks {
+		p, ok := parentMeta(wf.harness, wf.parent)
+		if !ok || wholeHolds(dir, m, []map[string]bool{wf.turns}, p) || endedBy(dir, m, p, wf.started) {
+			out[wf.parent] = true
+		}
+	}
+	for _, f := range metaForks {
+		if f.Parent != "" && f.Parent != f.ID && forkHolds(f) {
+			out[f.Parent] = true
+		}
+	}
+	own := spawnedFamily(m, ids, out, forkHolds)
 	for _, meta := range m.Sessions {
 		if own[meta.ID] {
 			out[meta.ID] = true
@@ -126,7 +187,51 @@ func lineage(dir string, ids map[string]bool, heads, wholes []model.Session) map
 			}
 		}
 	}
-	return out
+	// What stays on the page and shares turns with an asker is cut at the
+	// last turn they share: a source that went on after the fork, a sibling
+	// fork. The asker holds everything up to there already (#5335).
+	cuts := map[string]time.Time{}
+	cutAt := func(id string, at time.Time) {
+		if at.IsZero() || out[id] {
+			return
+		}
+		if at.After(cuts[id]) {
+			cuts[id] = at
+		}
+	}
+	shared := sharedRecords(dir, m)
+	for _, f := range metaForks {
+		if p, ok := parentMeta(f.Harness, f.Parent); ok && !out[p.ID] {
+			at := shared(f, p)
+			if at.IsZero() {
+				// Copied with new times: what the source held when the
+				// fork started is what it copied.
+				at = startedAt(dir, m, f)
+			}
+			cutAt(p.ID, at)
+		}
+	}
+	for _, wf := range wholeForks {
+		if p, ok := parentMeta(wf.harness, wf.parent); ok && !out[p.ID] {
+			at := wholeShared(dir, m, wf.turns, p)
+			if at.IsZero() {
+				at = wf.started
+			}
+			cutAt(p.ID, at)
+		}
+	}
+	for _, meta := range m.Sessions {
+		if meta.Opening == 0 || out[meta.ID] {
+			continue
+		}
+		for _, a := range askers[meta.Opening] {
+			cutAt(meta.ID, shared(a, meta))
+		}
+		for _, w := range wholeOpenings[meta.Opening] {
+			cutAt(meta.ID, wholeShared(dir, m, w, meta))
+		}
+	}
+	return out, cuts
 }
 
 // heldRecords answers whether asker holds other's last record, the same role,
@@ -171,6 +276,56 @@ func heldRecords(dir string, m Manifest) func(asker, other SessionMeta) bool {
 		}
 		return false
 	}
+}
+
+// endedBy reports whether src's last turn came no later than at, so a fork
+// that started at at was made after everything src holds. A fork read with no
+// times says nothing either way, and its source is left out as it always was;
+// a read that fails answers no.
+func endedBy(dir string, m Manifest, src SessionMeta, at time.Time) bool {
+	if at.IsZero() {
+		return true
+	}
+	recs, err := recordsForKey(filepath.Join(dir, "records.bin"), tablesFromManifest(m), src.Harness+":"+src.ID)
+	if err != nil {
+		return false
+	}
+	for i := len(recs) - 1; i >= 0; i-- {
+		switch r := recs[i]; {
+		case afterForkNoise(r), r.Role == roleEdit, r.Role == roleWrote, r.Role == roleFiles, r.Time.IsZero():
+			continue
+		}
+		return !recs[i].Time.After(at)
+	}
+	return false
+}
+
+// startedAt is when an indexed session started: its own field, or its first
+// timed record when the harness left that out.
+func startedAt(dir string, m Manifest, meta SessionMeta) time.Time {
+	if !meta.Started.IsZero() {
+		return meta.Started
+	}
+	recs, err := recordsForKey(filepath.Join(dir, "records.bin"), tablesFromManifest(m), meta.Harness+":"+meta.ID)
+	if err != nil {
+		return time.Time{}
+	}
+	for _, r := range recs {
+		if !r.Time.IsZero() {
+			return r.Time
+		}
+	}
+	return time.Time{}
+}
+
+// firstTimed is the time of a session's first timed message.
+func firstTimed(s model.Session) time.Time {
+	for _, msg := range s.Messages {
+		if !msg.Time.IsZero() {
+			return msg.Time
+		}
+	}
+	return time.Time{}
 }
 
 // wholeTurns is the role and millisecond of every message a session holds.
@@ -252,18 +407,47 @@ func HasSession(dir, id string) bool {
 // the child that spawned it, not the session the person is in, so one step
 // each way left the grandchildren on the root's page and the root on theirs.
 // It also adds the ancestors to out.
-func spawnedFamily(m Manifest, ids, out map[string]bool) map[string]bool {
+//
+// The walk up starts from every session already in out, so a parent only an
+// unindexed asker names leads on to its own parent, and it goes on through a
+// fork to its source when forkHolds says the fork holds the source's end: a
+// sub-agent of a fork counts what the fork counts (#5305).
+func spawnedFamily(m Manifest, ids, out map[string]bool, forkHolds func(SessionMeta) bool) map[string]bool {
 	children := map[string][]string{}
 	parent := map[string]string{}
+	forks := map[string]SessionMeta{}
 	for _, meta := range m.Sessions {
-		if spawnedKind(meta.Kind) && meta.Parent != "" && meta.Parent != meta.ID {
+		if meta.Parent == "" || meta.Parent == meta.ID {
+			continue
+		}
+		if spawnedKind(meta.Kind) {
 			children[meta.Parent] = append(children[meta.Parent], meta.ID)
 			parent[meta.ID] = meta.Parent
+		} else if meta.Kind == "fork" && forkHolds != nil {
+			forks[meta.ID] = meta
 		}
 	}
+	up := func(id string) string {
+		if p := parent[id]; p != "" {
+			return p
+		}
+		if f, ok := forks[id]; ok && forkHolds(f) {
+			return f.Parent
+		}
+		return ""
+	}
+	var starts []string
 	for id := range ids {
+		starts = append(starts, id)
+	}
+	for id := range out {
+		if !ids[id] {
+			starts = append(starts, id)
+		}
+	}
+	for _, id := range starts {
 		seen := map[string]bool{id: true}
-		for p := parent[id]; p != "" && !seen[p]; p = parent[p] {
+		for p := up(id); p != "" && !seen[p]; p = up(p) {
 			seen[p] = true
 			out[p] = true
 		}
@@ -290,13 +474,7 @@ func spawnedFamily(m Manifest, ids, out map[string]bool) map[string]bool {
 // agent another session spawned.
 func SpawnedKind(kind string) bool { return spawnedKind(kind) }
 
-func spawnedKind(kind string) bool {
-	switch kind {
-	case "sidechain", "subagent", "subagent_fork":
-		return true
-	}
-	return false
-}
+func spawnedKind(kind string) bool { return model.SpawnedKind(kind) }
 
 // openingTextBytes is how much of the opening turn the fingerprint reads: the
 // index caps a message's text and a transcript read straight off disk does not.

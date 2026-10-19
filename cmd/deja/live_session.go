@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"io"
+	"maps"
 	"os"
 	"sort"
 	"strings"
@@ -86,7 +87,7 @@ func endSessionLive(dir, id string) {
 }
 
 // runHookSessionEnd is the SessionEnd hook of Claude Code, Codex, Cursor CLI,
-// Gemini CLI, Qwen Code, Kimi Code, Grok and goose, and what the plugins of pi,
+// Gemini CLI, Qwen Code, Kimi Code (its Stop too), Grok and goose, and what the plugins of pi,
 // omp, prime-agent, Senpi, gjc, OpenClaw, Hermes, Cline and dsh run when their
 // host says a session is over. It says nothing back — none of them reads a
 // reply to it — and it runs even with recall off: clearing a stamp never hands
@@ -132,10 +133,12 @@ func refreshDigestAfterSession(dir, cwd string) {
 	requestHookRefresh(dir, cwd)
 }
 
-// runHookMCPCall is Copilot CLI's preMcpToolCall hook: it stamps the session
-// that is about to call an MCP tool, so recall reads a stamp made a moment ago
-// rather than one from a sessionStart that may be past the window (#4551). It
-// prints nothing: Copilot reads a reply as the request's new _meta.
+// runHookMCPCall is Copilot CLI's preMcpToolCall hook, and Kimi Code's
+// PreToolUse on deja's own MCP tool: it stamps the session that is about to
+// call an MCP tool, so recall reads a stamp made a moment ago rather than one
+// from a sessionStart that may be past the window (#4551), or one Kimi's Stop
+// already cleared (#5145). It prints nothing: Copilot reads a reply as the
+// request's new _meta, and Kimi reads an empty one as allow.
 func runHookMCPCall(dir string, stdin io.Reader, _ io.Writer) {
 	var input precompactHookInput
 	_ = json.Unmarshal(readHookPayload(stdin, hookStdinWait), &input)
@@ -235,6 +238,13 @@ func liveSessionIDs(dir string) map[string]bool {
 // fork's first turn comes before any build has seen it, and MCP answered it
 // with its source (#5129).
 func liveLineage(dir string) map[string]bool {
+	out, _ := liveLineageCut(dir)
+	return out
+}
+
+// liveLineageCut is liveLineage with the cut LineageCut gives each session it
+// leaves on the page that a live session shares turns with (#5335).
+func liveLineageCut(dir string) (map[string]bool, map[string]time.Time) {
 	ids := liveSessionIDs(dir)
 	var wholes []model.Session
 	for id := range ids {
@@ -245,7 +255,7 @@ func liveLineage(dir string) map[string]bool {
 			wholes = append(wholes, w)
 		}
 	}
-	return index.LineageWhole(dir, ids, wholes...)
+	return index.LineageWholeCut(dir, ids, wholes...)
 }
 
 // liveWholes keeps each unindexed live session read for this process. What a
@@ -309,6 +319,12 @@ func liveWhole(id string) (model.Session, bool) {
 // store: a fork's first prompts come before any build has seen it, and they
 // were the ones answered with the fork's source.
 func askerLineage(dir, asker, transcript string, ids ...string) map[string]bool {
+	out, _ := askerLineageCut(dir, asker, transcript, ids...)
+	return out
+}
+
+// askerLineageCut is askerLineage with the cuts LineageCut gives (#5335).
+func askerLineageCut(dir, asker, transcript string, ids ...string) (map[string]bool, map[string]time.Time) {
 	set := map[string]bool{}
 	for _, id := range append([]string{asker}, ids...) {
 		if id = strings.TrimSpace(id); id == "" {
@@ -322,14 +338,16 @@ func askerLineage(dir, asker, transcript string, ids ...string) map[string]bool 
 	var heads []model.Session
 	if asker = strings.TrimSpace(asker); asker != "" && !isSpawnedReader(asker) && !index.HasSession(dir, asker) {
 		if h, ok := askerHead(asker, transcript); ok {
-			heads = append(heads, h)
+			heads = append(heads, withClaudeForkMark(dir, h))
 		} else if w, ok := sources.ClineForkSession(asker); ok {
 			// Read whole, so the copy it holds is left out and a sibling
 			// fork that went on past it is not (#5151).
-			return index.LineageWhole(dir, set, lineageOnly(w))
+			return index.LineageWholeCut(dir, set, lineageOnly(w))
+		} else if src := claudeForkMark(dir, asker); src != "" {
+			heads = append(heads, model.Session{Harness: "claude", ID: asker, Kind: "fork", Parent: src})
 		}
 	}
-	return index.Lineage(dir, set, heads...)
+	return index.LineageCut(dir, set, heads...)
 }
 
 // askerHead is the session read off its own store: the first records of the
@@ -396,6 +414,13 @@ func spawnParent(sid string) string {
 // on a page of five (#3945).
 func withoutLiveSessions(dir string, ss []model.Session) []model.Session {
 	live := liveLineage(dir)
+	if asker := openclawUnstampedAsker(dir); asker != "" {
+		live = maps.Clone(live)
+		if live == nil {
+			live = map[string]bool{}
+		}
+		live[asker] = true
+	}
 	if len(live) == 0 {
 		return ss
 	}
@@ -409,4 +434,17 @@ func withoutLiveSessions(dir string, ss []model.Session) []model.Session {
 	// An index holding nothing else says so through the empty answer, which is
 	// the honest one: the only session that matched is the one being written.
 	return out
+}
+
+// withClaudeForkMark names the source SessionStart kept for a Claude Code fork
+// whose transcript does not name it yet: the first records hold no forkedFrom
+// until the copy is written after the first tool result (#5128).
+func withClaudeForkMark(dir string, h model.Session) model.Session {
+	if h.Parent != "" || h.Kind != "" {
+		return h
+	}
+	if src := claudeForkMark(dir, h.ID); src != "" && src != h.ID {
+		h.Kind, h.Parent = "fork", src
+	}
+	return h
 }

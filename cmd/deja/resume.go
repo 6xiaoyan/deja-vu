@@ -100,6 +100,9 @@ func runResume(dir string, args []string, stdout io.Writer) error {
 	if note := resumeDirGoneNote(s, dir); note != "" {
 		fmt.Fprintf(os.Stderr, "deja: %s\n", note)
 	}
+	if s.Harness == "openclaw" && strings.HasPrefix(cmdline, "openclaw chat ") {
+		fmt.Fprintf(os.Stderr, "deja: %s\n", openclawLocalOnlyNote())
+	}
 	if !doExec {
 		if note := resumeCaveats[s.Harness]; note != "" {
 			// stderr, so `$(deja resume …)` still composes: the command is the
@@ -319,6 +322,12 @@ var junieSessionID = regexp.MustCompile(`^session-[0-9]{6}-[0-9]{6}-[0-9a-zA-Z]+
 
 var crushSessionID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
+// subagentNotReopened is the clients that have no command to reopen one of
+// their sub-agent runs on its own.
+var subagentNotReopened = map[string]bool{
+	"kimi": true, "qwen": true, "muse": true, "codebuddy": true, "devin": true, "gemini": true, "cursor": true,
+}
+
 // resumeCommand maps a session to (workdir, command). workdir is empty when
 // the harness resumes globally or the original directory is unknown.
 func resumeCommand(s model.Session) (string, string, error) {
@@ -328,14 +337,18 @@ func resumeCommand(s model.Session) (string, string, error) {
 	if !resumeIDPattern.MatchString(s.ID) {
 		return "", "", fmt.Errorf("session id %q contains characters deja will not place in a command", digest.Short(s.ID))
 	}
-	// A CodeBuddy sub-agent log is a session in deja under
-	// DEJA_INCLUDE_SUBAGENTS=1, a Qwen or Kimi one by default (#5223, #5229), but none of
-	// these clients opens one on its own; the
-	// id deja gives it is one they have never seen (#4483).
+	// A CodeBuddy, Qwen or Kimi sub-agent log is a session in deja by default
+	// (#5223, #5229, #5301), but none of these clients opens one on its own;
+	// the id deja gives it is one they have never seen (#4483).
 	// Muse's child logs are the same: `muse resume <child>` answers "has no
 	// saved log" (#4710). Gemini CLI's under chats/<parent>/ answer "Invalid
-	// session identifier" (0.64, #5134).
-	if s.Kind == "subagent" && (s.Harness == "kimi" || s.Harness == "qwen" || s.Harness == "muse" || s.Harness == "codebuddy" || s.Harness == "devin" || s.Harness == "gemini") && s.Parent != "" {
+	// session identifier" (0.64, #5134). A Cursor CLI subagent's state lives in
+	// its parent's chat store and only its transcript is a file of its own, so
+	// `cursor-agent --resume <child>` has no chat to open (2026.09.02, #5303).
+	// Hermes and OpenClaw do reopen a child: `hermes --resume <delegate child>`
+	// and `openclaw chat --session agent:main:subagent:<id>` load its history
+	// (Hermes 0.17.0, OpenClaw 2026.10.4, #5303), and goose's does too.
+	if s.Kind == "subagent" && subagentNotReopened[s.Harness] && s.Parent != "" {
 		return "", "", fmt.Errorf("session %s is a sub-agent run, which %s does not reopen on its own — `deja resume %s` reopens the session that spawned it", digest.Short(s.ID), s.Harness, s.Parent)
 	}
 	// A Copilot CLI sub-agent runs inside its parent's log and Copilot marks it
@@ -702,7 +715,8 @@ func resumeCommand(s model.Session) (string, string, error) {
 		if !openclawKeyPattern.MatchString(key) {
 			return "", "", fmt.Errorf("session key %q contains characters deja will not place in a command", key)
 		}
-		return "", "openclaw chat --session " + key, nil
+		sub, _ := openclawTUI()
+		return "", "openclaw " + sub + " --session " + key, nil
 	case "kimi":
 		// In the directory the session was created in: Kimi Code refuses a
 		// session from anywhere else (#4274), so a workDir that is gone is

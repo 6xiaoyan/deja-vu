@@ -34,7 +34,7 @@ func installOpenClawPlugin(exe string, uninstall bool) (installResult, error) {
 	// config as a hooks.json, and one that names the build it was
 	// installed from stops working the day that build moves (#3682).
 	exe = hookExeFor(exe, uninstall)
-	dir := filepath.Join(sources.OpenClawStateDir(), "extensions", openclawPluginID)
+	dir := openclawPluginDir()
 	if uninstall {
 		// Same as the hook pack beside it: say what happened, and take the
 		// directories deja made above this one (#3698).
@@ -54,29 +54,7 @@ func installOpenClawPlugin(exe string, uninstall bool) (installResult, error) {
 		pruneCreatedDir(filepath.Dir(dir))
 		return installResult{Path: dir, Action: "removed"}, nil
 	}
-	noteCreatedDirs(dir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return installResult{}, err
-	}
-	for _, f := range []struct{ name, body string }{
-		{"package.json", openclawPluginPackage()},
-		{"openclaw.plugin.json", openclawPluginManifest()},
-	} {
-		path := filepath.Join(dir, f.name)
-		old, err := readConfig(path)
-		if err != nil {
-			return installResult{}, err
-		}
-		if _, err := writeIfChanged(path, old, []byte(f.body)); err != nil {
-			return installResult{}, err
-		}
-	}
-	entry := filepath.Join(dir, "index.mjs")
-	old, err := readConfig(entry)
-	if err != nil {
-		return installResult{}, err
-	}
-	a, err := writeIfChanged(entry, old, []byte(openclawPluginJS(exe)))
+	entry, a, err := writeOpenClawPluginFiles(exe)
 	if err != nil {
 		return installResult{}, err
 	}
@@ -93,6 +71,36 @@ func installOpenClawPlugin(exe string, uninstall bool) (installResult, error) {
 	// said "unchanged".
 	return wroteAll(installResult{Path: entry, Action: a},
 		installResult{Path: dir, Action: a}, cfg), nil
+}
+
+// writeOpenClawPluginFiles writes the plugin's directory, which is deja's
+// own, and nothing in openclaw.json: the entry point and what was done to it.
+func writeOpenClawPluginFiles(exe string) (string, string, error) {
+	dir := openclawPluginDir()
+	noteCreatedDirs(dir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", "", err
+	}
+	for _, f := range []struct{ name, body string }{
+		{"package.json", openclawPluginPackage()},
+		{"openclaw.plugin.json", openclawPluginManifest()},
+	} {
+		path := filepath.Join(dir, f.name)
+		old, err := readConfig(path)
+		if err != nil {
+			return "", "", err
+		}
+		if _, err := writeIfChanged(path, old, []byte(f.body)); err != nil {
+			return "", "", err
+		}
+	}
+	entry := filepath.Join(dir, "index.mjs")
+	old, err := readConfig(entry)
+	if err != nil {
+		return "", "", err
+	}
+	a, err := writeIfChanged(entry, old, []byte(openclawPluginJS(exe)))
+	return entry, a, err
 }
 
 // setOpenClawPluginEntry writes our entry under plugins.entries, leaving
@@ -664,6 +672,7 @@ export default {
     if (typeof api.registerAgentToolResultMiddleware === "function") {
       api.registerAgentToolResultMiddleware(async (event, ctx) => {
         try {
+          if (ctx?.trigger === "heartbeat") return;
           const line = toolLine(event, ctx);
           if (!line) return;
           const content = Array.isArray(event?.result?.content) ? event.result.content : [];
@@ -689,6 +698,7 @@ export default {
         cwd: at.cwd,
         source: "startup",
         deja_once: true,
+        deja_prompt_stamps: true,
       });
     };
     // By default every DM shares agent:main:main, so a receipt is tied to the
@@ -745,6 +755,10 @@ export default {
       async (event, ctx) => {
         const prompt = typeof event?.prompt === "string" ? event.prompt.trim() : "";
         if (!prompt) return;
+        // A heartbeat poll is not a turn anyone asked for: recall on its
+        // prompt has nothing to answer, and the stamp it wrote hid the
+        // session from the user's other sessions for twenty minutes (#5270).
+        if (ctx?.trigger === "heartbeat") return;
         // Recall skips what it already showed this agent session, keyed by the
         // session id. A payload without one turns that off: measured on a real
         // store, half of all injections were then a word-for-word repeat. The

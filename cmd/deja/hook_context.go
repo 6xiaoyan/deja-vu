@@ -640,6 +640,12 @@ func runHookContextMode(dir string, plain, once bool) error {
 		// question, so a first turn with nothing to say has nothing new to say
 		// on the second either.
 		Once bool `json:"deja_once"`
+		// PromptStamps is set by a host whose prompt hook runs on every turn
+		// a person asked for, so a digest call after the first is not what
+		// says the session is in use. OpenClaw fires agent:bootstrap on its
+		// heartbeat polls too, and the stamp they wrote hid the main DM from
+		// recall for twenty minutes after each poll (#5270).
+		PromptStamps bool `json:"deja_prompt_stamps"`
 		// Shell is set by a host that cannot count on a deja tool for the
 		// agent to call: pi before 0.99 has no MCP of its own, and a lead
 		// naming recall_context sent the model to "Tool recall_context not
@@ -672,6 +678,9 @@ func runHookContextMode(dir string, plain, once bool) error {
 		shape = hookToolPlain
 	} else if copilotHookOutput {
 		shape = hookToolCopilot
+	}
+	if input.Once && input.PromptStamps && sessionHadDigest(dir, input.SessionID) {
+		return nil
 	}
 	// The first moment this session exists, so the first recall of it — the one
 	// an agent plans against — already knows whose transcript to leave out.
@@ -713,6 +722,9 @@ func runHookContextMode(dir string, plain, once bool) error {
 	// turns, the digest that opened it among them. A second one led with the
 	// source itself, the fork's own opening under another id (#4549).
 	if input.Source == "fork" {
+		// Its first prompt and tool come before the copy is written; they
+		// learn the source from what this keeps (#5128).
+		rememberClaudeForkSource(dir, input.SessionID, input.TranscriptPath)
 		return nil
 	}
 	if threadHasDigest(dir, input.Source, input.SessionID, input.TranscriptPath) {
@@ -726,14 +738,25 @@ func runHookContextMode(dir string, plain, once bool) error {
 	// The session asking is left out of its own digest (#4199), except after a
 	// compaction: the lead there points the agent at that session's id.
 	var self []string
-	for id := range askerLineage(dir, input.SessionID, input.TranscriptPath, input.ParentSessionID) {
+	lineage, cut := askerLineageCut(dir, input.SessionID, input.TranscriptPath, input.ParentSessionID)
+	for id := range lineage {
 		if input.Source == "compact" && id == input.SessionID {
 			continue
 		}
 		self = append(self, id)
 	}
 	sort.Strings(self)
-	digest, sessions, raw, taskMatched, withheld, servedIDs, servedProjects := cachedHookDigestFor(dir, hookProjectPath(input.CWD, input.WorkspaceRoots), self...)
+	var digest string
+	var sessions, withheld int
+	var raw int64
+	var taskMatched, servedIDs, servedProjects []string
+	if len(cut) > 0 {
+		// A fork whose source went on: cut per asker, so not from the cache.
+		e := hookDigestBuild(dir, hookProjectPath(input.CWD, input.WorkspaceRoots), self, false, cut)
+		digest, sessions, raw, taskMatched, withheld, servedIDs, servedProjects = e.Digest, e.Sessions, e.Raw, e.TaskMatched, e.Withheld, e.IDs, e.Projects
+	} else {
+		digest, sessions, raw, taskMatched, withheld, servedIDs, servedProjects = cachedHookDigestFor(dir, hookProjectPath(input.CWD, input.WorkspaceRoots), self...)
+	}
 	if digest == "" {
 		// No session from this project, which is the usual state in a new
 		// checkout — and exactly where knowing what this machine is missing
@@ -1351,14 +1374,14 @@ func hookDigestResult(dir string) (string, int, int64, []string, int, []string, 
 // environment, where a project deja itself had written stayed for every later
 // call in the process (#2182, #2185).
 func hookDigestResultFor(dir, fromPayload string, exclude ...string) (string, int, int64, []string, int, []string, []string) {
-	e := hookDigestBuild(dir, fromPayload, exclude, false)
+	e := hookDigestBuild(dir, fromPayload, exclude, false, nil)
 	return e.Digest, e.Sessions, e.Raw, e.TaskMatched, e.Withheld, e.IDs, e.Projects
 }
 
 // hookDigestEntryFor is the digest as the cache keeps it: with every session
 // it serves, and as it reads with each of them left out.
 func hookDigestEntryFor(dir, fromPayload string) hookCacheEntry {
-	return hookDigestBuild(dir, fromPayload, nil, true)
+	return hookDigestBuild(dir, fromPayload, nil, true, nil)
 }
 
 // withProjectsOf adds the projects of sessions already chosen to a name list,
@@ -1383,7 +1406,9 @@ func withProjectsOf(names []string, ss []model.Session) []string {
 // cache hit from a rebuild.
 var hookDigestRenders atomic.Int64
 
-func hookDigestBuild(dir, fromPayload string, exclude []string, variants bool) (entry hookCacheEntry) {
+// cut leaves out each session's records at or before its time, the turns a
+// fork asking already holds as its copy of a source that went on (#5335).
+func hookDigestBuild(dir, fromPayload string, exclude []string, variants bool, cut map[string]time.Time) (entry hookCacheEntry) {
 	withheld := 0
 	defer func() { _ = recover() }()
 	trace := os.Getenv("DEJA_TRACE") == "1"
@@ -1518,6 +1543,12 @@ func hookDigestBuild(dir, fromPayload string, exclude []string, variants bool) (
 	render := func(exclude []string) hookCacheEntry {
 		hookDigestRenders.Add(1)
 		ss := slices.DeleteFunc(slices.Clone(ss), func(s model.Session) bool { return s.ID != "" && slices.Contains(exclude, s.ID) })
+		if len(cut) > 0 {
+			ss = slices.DeleteFunc(ss, func(s model.Session) bool { return len(cutSessionAt(s, cut).Messages) == 0 })
+			for i := range ss {
+				ss[i] = cutSessionAt(ss[i], cut)
+			}
+		}
 		// A subagent run is the parent's work seen from inside, and what it says
 		// on its own is the process talk a spawned agent produces — "Sending
 		// verdict", "Worktrees cleaned up". Indexing already treats these runs as

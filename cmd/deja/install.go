@@ -1276,7 +1276,16 @@ func installAntigravityAuto(exe string, uninstall bool) (installResult, error) {
 }
 
 func installOpenClawAuto(exe string, uninstall bool) (installResult, error) {
-	mcp, err := installOpenClawMCP(exe, uninstall)
+	// Every section first: a refusal after the MCP entry went in would leave
+	// the target half wired.
+	if !uninstall {
+		if err := openclawIncludeRefuse(exe, true); err != nil {
+			return installResult{}, err
+		}
+	}
+	// The entry alone: the refusal above covered it, and the note below names
+	// what is left in included files for all three.
+	mcp, err := installOpenClawMCPEntry(exe, uninstall)
 	if err != nil {
 		return installResult{}, err
 	}
@@ -1289,8 +1298,21 @@ func installOpenClawAuto(exe string, uninstall bool) (installResult, error) {
 	if err != nil {
 		return installResult{}, err
 	}
-	return wroteAll(mcp, plugin, hooks), nil
+	if !uninstall {
+		fmt.Println("openclaw: " + openclawLocalTUINote)
+	}
+	res := wroteAll(mcp, plugin, hooks)
+	if uninstall {
+		res.Note = joinNotesWith("; ", res.Note, openclawIncludedLeftNote(true))
+	}
+	return res, nil
 }
+
+// openclawLocalTUINote is said where openclaw-auto reads as wired. OpenClaw's
+// embedded TUI loads plugins and runs no hook of theirs, nor any internal hook
+// (2026.10.4, checked with a plugin registered on every hook name), so deja
+// cannot give it a digest, recall or a live stamp (#5271).
+const openclawLocalTUINote = "`openclaw chat` and `openclaw tui --local` run no plugin or hook — no digest or recall there; `openclaw tui` on the gateway and `openclaw agent --local` have both"
 
 func installHermesAuto(exe string, uninstall bool) (installResult, error) {
 	if !uninstall {
@@ -3003,7 +3025,7 @@ func installStatusline(exe string, uninstall bool) (installResult, error) {
 
 func installCodex(exe string, uninstall bool) (installResult, error) {
 	path := filepath.Join(sources.CodexHome(), "config.toml")
-	cmd, args := mcpCommandArgs(exe)
+	cmd, args := mcpLaunchCommandArgs(exe, uninstall)
 	block := fmt.Sprintf("[mcp_servers.deja]\ntype = \"stdio\"\ncommand = %q\nargs = %s\n", cmd, tomlStringArray(args))
 	return installTOML(path, block, uninstall)
 }
@@ -3043,7 +3065,7 @@ func installGrok(exe string, uninstall bool) (installResult, error) {
 
 // installGrokConfig is Grok Build's half: [mcp_servers.deja] in config.toml.
 func installGrokConfig(exe string, uninstall bool) (installResult, error) {
-	cmd, args := mcpCommandArgs(exe)
+	cmd, args := mcpLaunchCommandArgs(exe, uninstall)
 	block := fmt.Sprintf("[mcp_servers.deja]\ncommand = %q\nargs = %s\n", cmd, tomlStringArray(args))
 	return installTOML(filepath.Join(sources.GrokHome(), "config.toml"), block, uninstall)
 }
@@ -3701,10 +3723,37 @@ func replacedEntryNote(prev, entry any) string {
 	// format gained since, and saying "replaced … which ran /bin/deja" of
 	// /bin/deja is noise sitting where a real takeover should stand out
 	// (#2479).
-	if was == entryCommandName(entry) {
+	if sameDejaCommand(was, entryCommandName(entry)) {
 		return ""
 	}
 	return fmt.Sprintf("replaced the deja entry that was already here, which ran %s", safeForStatusline(was, 200))
+}
+
+// sameDejaCommand reports whether an entry that ran was runs the deja that now
+// does: the same path or, now being the launcher, the binary it wraps or a
+// launcher an older install wrote. The MCP entries moved to the launcher
+// (#5323) said "replaced … which ran <deja>" on every upgrade from this very
+// binary — the noise #2479 took out.
+func sameDejaCommand(was, now string) bool {
+	if was == now {
+		return true
+	}
+	l := dejaLauncherPath()
+	if l == "" || now != l {
+		return false
+	}
+	if filepath.Base(was) == filepath.Base(l) {
+		return true
+	}
+	cur, err := os.ReadFile(l)
+	if err != nil {
+		return false
+	}
+	if string(cur) == dejaLauncherScript(was) {
+		return true
+	}
+	resolved, err := filepath.EvalSymlinks(was)
+	return err == nil && string(cur) == dejaLauncherScript(resolved)
 }
 
 // entryRunsDeja reports whether an MCP entry runs the deja binary, wherever the
@@ -4200,6 +4249,19 @@ func installCopilotMCP(exe string, uninstall bool) (installResult, error) {
 // installOpenClawMCP wires deja into openclaw.json — OpenClaw keeps MCP
 // servers under mcp.servers, not the common mcpServers root.
 func installOpenClawMCP(exe string, uninstall bool) (installResult, error) {
+	if !uninstall {
+		if err := openclawIncludeRefuse(exe, false); err != nil {
+			return installResult{}, err
+		}
+	}
+	res, err := installOpenClawMCPEntry(exe, uninstall)
+	if err == nil && uninstall {
+		res.Note = joinNotesWith("; ", res.Note, openclawIncludedLeftNote(false))
+	}
+	return res, err
+}
+
+func installOpenClawMCPEntry(exe string, uninstall bool) (installResult, error) {
 	path := filepath.Join(sources.OpenClawStateDir(), "openclaw.json")
 	old, err := readConfig(path)
 	if err != nil {
@@ -4212,7 +4274,7 @@ func installOpenClawMCP(exe string, uninstall bool) (installResult, error) {
 	} else if configIsJSONC(old) {
 		// Two keys deep, which the text writer takes as a dotted block key
 		// (#2783).
-		command, args := mcpCommandArgs(exe)
+		command, args := mcpLaunchCommandArgs(exe, uninstall)
 		return writeJSONCEntry(path, old, "mcp.servers",
 			map[string]any{"command": command, "args": args}, uninstall)
 	} else if json.Unmarshal(old, &root) != nil {
@@ -4253,7 +4315,7 @@ func installOpenClawMCP(exe string, uninstall bool) (installResult, error) {
 			forgetBlockAdded(path, "mcp.servers")
 		}
 	} else {
-		command, args := mcpCommandArgs(exe)
+		command, args := mcpLaunchCommandArgs(exe, uninstall)
 		key := dejaEntryKey(servers)
 		if key != "deja" {
 			noteBlockAdded(path, "mcp.servers."+key)
@@ -5323,6 +5385,9 @@ func replacedJSONCLineNote(dropped []string, line string) string {
 	was := jsoncEntryCommand(strings.Join(dropped, " "))
 	if was == "" {
 		return "replaced the deja entry that was already here"
+	}
+	if sameDejaCommand(was, jsoncEntryCommand(line)) {
+		return ""
 	}
 	return fmt.Sprintf("replaced the deja entry that was already here, which ran %s", safeForStatusline(was, 200))
 }

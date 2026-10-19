@@ -749,7 +749,16 @@ import (
 // 83: a Hermes delegate_task child is a sub-agent of its parent whatever
 // source it ran under, files under its parent's project, and Hermes' relative
 // file paths sit under the session's directory (#5248, #5249, #5250).
-const version = 83
+// 84: an OpenClaw heartbeat poll and its NO_REPLY are not turns, so a window
+// that only got polls is no longer a session (#5319).
+// 85: DEJA_INCLUDE_SUBAGENTS means the same in every reader: =0 leaves every
+// sub-agent run out, unset cuts it to task, edits and last turns (#5301).
+// 86: an OpenClaw JSONL sub-agent spawned before a /new stays under the window
+// that spawned it, not the key's newer one (#5307).
+// 87: an OpenClaw heartbeat poll answered HEARTBEAT_OK is not a turn (#5326).
+// 88: an OpenClaw JSONL sub-agent whose spawning window was archived as .zst
+// keeps it as its parent (#5340).
+const version = 88
 
 // onDiskFormat is how the store is laid out on disk — the record encoding, the
 // bucket encoding, the manifest's own shape. It moves only when a reader of an
