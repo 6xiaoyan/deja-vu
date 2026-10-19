@@ -1541,6 +1541,8 @@ func recallTextResultIn(dir, q, harness, project string, limit, offset, budget i
 		// accepted and then ignored.
 		o.Projects = []string{project}
 	}
+	// The search as the caller scoped it, for the respelling to run again.
+	asked := o
 	result, o2, hits, policyHidden, err := recallRank(dir, q, o)
 	if err != nil {
 		return "", 0, 0, nil, nil, err
@@ -1585,7 +1587,7 @@ func recallTextResultIn(dir, q, harness, project string, limit, offset, budget i
 	if len(hits) == 0 {
 		answer := emptyRecallAnswerPolicy(dir, q, policyHidden)
 		if policyHidden == 0 && offset == 0 {
-			if line := formRetryLine(dir, q, true, nil); len(answer)+len(line) <= budget {
+			if line := formRetryLine(dir, q, asked, pathScope, nil); len(answer)+len(line) <= budget {
 				answer += line
 			}
 		}
@@ -1911,7 +1913,9 @@ func recallTextResultIn(dir, q, harness, project string, limit, offset, budget i
 	// form it did (#5367).
 	retry := ""
 	if offset == 0 {
-		retry = formRetryLine(dir, q, formRetryWanted(result, total), hits[:served])
+		if formRetryWanted(result, strictShown) {
+			retry = formRetryLine(dir, q, asked, pathScope, hits[:served])
+		}
 	}
 	deep = retry + deep
 	// The paging line is the instruction, not the evidence: appending it before

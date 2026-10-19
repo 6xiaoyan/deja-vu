@@ -3,189 +3,227 @@ package index
 import (
 	"sort"
 	"strings"
+
+	"github.com/vshulcz/deja-vu/internal/query"
 )
 
-// FormRetry is a query the store can answer in its own spelling: one form per
-// word of the asked query, picked so that the fewest sessions hold them all.
+// FormRetry is a spelling of the asked query that the store holds: one form
+// per word, all of them in one message of Sessions sessions.
 type FormRetry struct {
 	Terms    []string
 	Sessions int
+	changed  int
 }
 
-// formRetryCombos bounds how many spellings of a query are tried. Four words
-// of eight forms each is 4096; the cap keeps the walk well under a
-// millisecond and leaves the common shapes (two or three words, two to five
-// forms each) untouched.
+// formRetryCombos bounds how many spellings of a query are tried; the walk
+// prunes on an empty intersection, so the common shapes never reach it.
 const formRetryCombos = 1024
 
-// WordFormRetry looks for the spelling of a Russian query that the store
-// holds word for word.
+// formRetryWords bounds the query length the walk takes on.
+const formRetryWords = 6
+
+// WordFormRetry lists, best first, up to three spellings of a Russian query
+// that the store holds word for word in one message.
 //
-// The relevance tier folds Russian endings, so a query in the wrong case
-// still ranks; what it cannot do on a store where every session uses the same
-// few nouns is tell the one session that said all of them apart from the
-// hundreds that said most. The exact AND can, but only in the form the store
-// wrote, and the agent has no way to know which form that was. The catalog
-// does: every word gets its other forms (and a Latin or Cyrillic spelling of
-// it, when the store holds one), and the combination with the narrowest
-// non-empty intersection is the query to hand back.
+// The relevance tier folds Russian endings, so a query in the wrong case still
+// ranks; what it cannot do on a store where everyone uses the same nouns is
+// tell the one session that said all of them apart from the hundreds that said
+// most. The exact AND can, but only in the form the store wrote, and the agent
+// cannot know which form that was. The catalog does.
 //
-// skip names the sessions ("harness:id") the caller already showed; a
-// spelling that only finds those is no retry. Nothing is returned for fewer
-// than two words: a single word has no intersection to narrow, and its
-// thinnest form is just its rarest one.
-func WordFormRetry(dir string, terms []string, skip map[string]bool) (FormRetry, bool) {
-	if len(terms) < 2 || len(terms) > 4 {
-		return FormRetry{}, false
+// The intersection is the search's own: per message, over the sessions o lets
+// through, so a spelling found only in another project or in the live session
+// is not offered. skip names the sessions ("harness:id") the caller already
+// showed; a spelling that only finds those is no retry. names are the words
+// the asker wrote as a name, which may be spelled in the other alphabet even
+// where the store also writes them in this one. The caller still runs the
+// candidates through the search before it claims anything.
+func WordFormRetry(dir string, terms []string, o query.Options, skip map[string]bool, names map[string]bool) []FormRetry {
+	if len(terms) < 2 || len(terms) > formRetryWords {
+		return nil
 	}
 	if dir == "" {
 		dir = DefaultDir()
 	}
 	catalog, err := tokenCatalogCached(dir)
 	if err != nil {
-		return FormRetry{}, false
+		return nil
 	}
 	options := make([][]string, len(terms))
 	changed := false
 	for i, term := range terms {
-		opts := []string{term}
-		seen := map[string]bool{term: true}
-		add := func(f string) {
-			if !seen[f] && catalog[f] {
-				seen[f] = true
-				opts = append(opts, f)
-			}
-		}
-		if isCyrToken(term) {
-			for _, v := range yoSpellings(term) {
-				add(v)
-				for _, f := range stemMatches(v, catalog) {
-					add(f)
-				}
-				for _, f := range shortNounForms(v) {
-					add(f)
-				}
-			}
-		}
-		for _, f := range otherScriptSpellings(term) {
-			add(f)
-		}
-		if len(opts) > 1 {
+		options[i] = retryOptions(term, catalog, names[term])
+		if len(options[i]) > 1 {
 			changed = true
 		}
-		options[i] = opts
 	}
 	if !changed {
-		return FormRetry{}, false
+		return nil
 	}
 	m, err := readManifestCached(dir)
 	if err != nil {
-		return FormRetry{}, false
+		return nil
 	}
 	servable := servableSids(dir)
 	key := make(map[uint32]string, len(m.Sessions))
 	for _, meta := range m.Sessions {
-		key[meta.Ord] = meta.Harness + ":" + meta.ID
+		if sessionMetaMatches(meta, o) && (servable == nil || servable[meta.Ord]) {
+			key[meta.Ord] = meta.Harness + ":" + meta.ID
+		}
 	}
-	// Spoken sessions only, for the reason TermSessionCountsSpoken gives: a
-	// form deja printed into a transcript is not a word anyone wrote (#3820).
-	sets := map[string]map[uint32]bool{}
 	recs := map[string]map[int64]uint32{}
 	for _, opts := range options {
 		for _, f := range opts {
-			if _, ok := sets[f]; ok {
+			if _, ok := recs[f]; ok {
 				continue
 			}
-			set := map[uint32]bool{}
 			rec := map[int64]uint32{}
 			if posts, err := postingsFor(dir, "t"+f); err == nil {
 				for _, p := range posts {
-					if p.Tool || (servable != nil && !servable[p.Sid]) {
-						continue
+					if _, ok := key[p.Sid]; ok {
+						rec[p.Off] = p.Sid
 					}
-					set[p.Sid] = true
-					rec[p.Off] = p.Sid
 				}
 			}
-			sets[f], recs[f] = set, rec
+			recs[f] = rec
 		}
 	}
-	// Narrowest first so the walk prunes early: an empty partial intersection
-	// ends that branch.
 	for _, opts := range options {
-		sort.SliceStable(opts, func(a, b int) bool { return len(sets[opts[a]]) < len(sets[opts[b]]) })
+		sort.SliceStable(opts, func(a, b int) bool { return len(recs[opts[a]]) < len(recs[opts[b]]) })
 	}
-	asked := strings.Join(terms, " ")
-	// One message saying every word is what a session about the thing looks
-	// like; the same words scattered over a long session is what a store
-	// where everyone uses them looks like. A spelling that meets in one
-	// message wins over one that only meets in one session, then the
-	// narrowest wins.
-	type scored struct {
-		FormRetry
-		together int
-	}
-	var best scored
-	better := func(c scored) bool {
-		if best.Terms == nil {
-			return true
-		}
-		if (c.together > 0) != (best.together > 0) {
-			return c.together > 0
-		}
-		if c.Sessions != best.Sessions {
-			return c.Sessions < best.Sessions
-		}
-		return c.together > best.together
-	}
+	var found []FormRetry
 	tried := 0
 	pick := make([]string, len(terms))
-	var walk func(i int, in map[uint32]bool, rin map[int64]uint32)
-	walk = func(i int, in map[uint32]bool, rin map[int64]uint32) {
+	used := map[string]bool{}
+	var walk func(i int, rin map[int64]uint32)
+	walk = func(i int, rin map[int64]uint32) {
 		if tried >= formRetryCombos {
 			return
 		}
 		if i == len(terms) {
 			tried++
-			if strings.Join(pick, " ") == asked {
-				return
-			}
-			fresh := 0
-			for sid := range in {
-				if k, ok := key[sid]; ok && !skip[k] {
-					fresh++
+			n := 0
+			for j := range pick {
+				if pick[j] != terms[j] {
+					n++
 				}
 			}
-			if fresh == 0 {
+			if n == 0 {
 				return
 			}
-			together := 0
+			sessions := map[uint32]bool{}
+			fresh := false
 			for _, sid := range rin {
-				if k, ok := key[sid]; ok && !skip[k] {
-					together++
+				sessions[sid] = true
+				if !skip[key[sid]] {
+					fresh = true
 				}
 			}
-			c := scored{FormRetry{Terms: append([]string(nil), pick...), Sessions: len(in)}, together}
-			if better(c) {
-				best = c
+			if fresh {
+				found = append(found, FormRetry{Terms: append([]string(nil), pick...), Sessions: len(sessions), changed: n})
 			}
 			return
 		}
 		for _, f := range options[i] {
-			next, rnext := sets[f], recs[f]
-			if in != nil {
-				next = intersectSids(in, next)
-				rnext = intersectRecs(rin, rnext)
+			// One word, one place: the same form twice is not a spelling of
+			// two words.
+			if used[f] {
+				continue
+			}
+			next := recs[f]
+			if rin != nil {
+				next = intersectRecs(rin, next)
 			}
 			if len(next) == 0 {
 				continue
 			}
 			pick[i] = f
-			walk(i+1, next, rnext)
+			used[f] = true
+			walk(i+1, next)
+			used[f] = false
 		}
 	}
-	walk(0, nil, nil)
-	return best.FormRetry, best.Terms != nil
+	walk(0, nil)
+	// The narrowest first: a spelling that a handful of sessions share is a
+	// session about the thing; one that hundreds share is the store's
+	// vocabulary. Then the one closest to what was asked.
+	sort.SliceStable(found, func(a, b int) bool {
+		if found[a].Sessions != found[b].Sessions {
+			return found[a].Sessions < found[b].Sessions
+		}
+		if found[a].changed != found[b].changed {
+			return found[a].changed < found[b].changed
+		}
+		return strings.Join(found[a].Terms, " ") < strings.Join(found[b].Terms, " ")
+	})
+	if len(found) > 3 {
+		found = found[:3]
+	}
+	return found
+}
+
+// retryOptions is a word and the spellings of it the catalog holds: its other
+// cases and ё, and the word in the other alphabet only when the store holds
+// none of those, or when the caller says the word is a name (asName). A
+// Russian word the store writes in Russian is usually not a name, and its
+// romanization is an English word more often than not: мост is most, план is
+// plan, лист is list.
+func retryOptions(term string, catalog map[string]bool, asName bool) []string {
+	opts := []string{term}
+	seen := map[string]bool{term: true}
+	add := func(f string) {
+		if !seen[f] && catalog[f] {
+			seen[f] = true
+			opts = append(opts, f)
+		}
+	}
+	if isCyrToken(term) {
+		for _, v := range yoSpellings(term) {
+			add(v)
+			for _, f := range stemMatches(v, catalog) {
+				if wholeForm(term, f) {
+					add(f)
+				}
+			}
+			for _, f := range shortNounForms(v) {
+				add(f)
+			}
+		}
+	}
+	if asName || (len(opts) == 1 && !catalog[term]) {
+		for _, f := range otherScriptSpellings(term) {
+			add(f)
+		}
+	}
+	return opts
+}
+
+// wholeForm keeps the forms that are the word with another ending, not a
+// stem the catalog happens to hold: упал does not mean упа, and данные does
+// not mean данн. A form longer than the stem carries an ending and is a word;
+// the bare stem is one only where Russian writes it bare — a noun's consonant
+// stem (лимитами, лимит), not a verb's (упал, упа) and not a cut through a
+// doubled letter (данные, данн).
+func wholeForm(term, form string) bool {
+	if len([]rune(form)) < 3 {
+		return false
+	}
+	stem, end := term, ""
+	for _, e := range cyrEndings {
+		if strings.HasSuffix(term, e) && len([]rune(term))-len([]rune(e)) >= 3 {
+			stem, end = strings.TrimSuffix(term, e), e
+			break
+		}
+	}
+	if form != stem {
+		return true
+	}
+	if cyrVerbEndings[end] {
+		return false
+	}
+	rs := []rune(stem)
+	last := rs[len(rs)-1]
+	return !strings.ContainsRune("аеёиоуыэюяйьъ", last) && rs[len(rs)-2] != last
 }
 
 func intersectRecs(a, b map[int64]uint32) map[int64]uint32 {
@@ -196,19 +234,6 @@ func intersectRecs(a, b map[int64]uint32) map[int64]uint32 {
 	for k, v := range a {
 		if _, ok := b[k]; ok {
 			out[k] = v
-		}
-	}
-	return out
-}
-
-func intersectSids(a, b map[uint32]bool) map[uint32]bool {
-	if len(a) > len(b) {
-		a, b = b, a
-	}
-	out := make(map[uint32]bool, len(a))
-	for k := range a {
-		if b[k] {
-			out[k] = true
 		}
 	}
 	return out

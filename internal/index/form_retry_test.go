@@ -3,6 +3,8 @@ package index
 import (
 	"slices"
 	"testing"
+
+	"github.com/vshulcz/deja-vu/internal/query"
 )
 
 func TestOtherScriptSpellingsReachTheUsualRomanization(t *testing.T) {
@@ -45,7 +47,27 @@ func TestShortNounFormsOnlyForConsonantStems(t *testing.T) {
 }
 
 func TestWordFormRetryNeedsTwoWords(t *testing.T) {
-	if _, ok := WordFormRetry(t.TempDir(), []string{"миграция"}, nil); ok {
+	if got := WordFormRetry(t.TempDir(), []string{"миграция"}, query.Options{}, nil, nil); len(got) > 0 {
 		t.Error("a single word got a retry")
+	}
+}
+
+// A stem the catalog holds is not a word form: упал is not упа, данные is not
+// данн (#5367 review). A noun's bare stem is.
+func TestWholeFormDropsCutStems(t *testing.T) {
+	for _, tc := range []struct {
+		term, form string
+		want       bool
+	}{
+		{"упал", "упа", false},
+		{"данные", "данн", false},
+		{"лимитами", "лимит", true},
+		{"запроса", "запрос", true},
+		{"лимит", "лимиты", true},
+		{"упал", "упали", true},
+	} {
+		if got := wholeForm(tc.term, tc.form); got != tc.want {
+			t.Errorf("wholeForm(%s, %s) = %v, want %v", tc.term, tc.form, got, tc.want)
+		}
 	}
 }
