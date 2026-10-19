@@ -38,6 +38,7 @@ func AdoptWriteBack(dir, kept, path string) (ok bool, err error) {
 	}
 	fs := walkFileState(path, fi, nil)
 	fs.LastUpdated = of.LastUpdated
+	fs.WrittenBack = true
 	fs.Redactions = of.Redactions
 	m.Files[path] = fs
 	if kept == path {
@@ -49,10 +50,11 @@ func AdoptWriteBack(dir, kept, path string) (ok bool, err error) {
 		delete(m.IngestFiles, kept)
 	}
 	for key, meta := range m.Sessions {
+		renameCopy(&meta, kept, path)
 		if meta.Path == kept {
 			meta.Path = path
-			m.Sessions[key] = meta
 		}
+		m.Sessions[key] = meta
 	}
 	return true, writeManifestMeta(dir, m)
 }

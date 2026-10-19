@@ -760,7 +760,9 @@ import (
 // keeps it as its parent (#5340).
 // 89: ё is filed as е, and queries fold it the same way, so «ещё» and «еще»
 // are one word.
-const version = 89
+// 90: a row names every transcript that holds its id, and a pass that
+// replaces the session reads them all (#5358).
+const version = 90
 
 // onDiskFormat is how the store is laid out on disk — the record encoding, the
 // bucket encoding, the manifest's own shape. It moves only when a reader of an
@@ -893,6 +895,11 @@ type FileState struct {
 	// PrefixHash stays for manifests written before this existed; they verify
 	// the old way once, and the next walk records a sample.
 	PrefixSample uint64 `json:"prefix_sample,omitempty"`
+	// WrittenBack marks a transcript `deja resume --write-back` rebuilt from
+	// the index (#4617): it holds the conversation only, so a pass that reads
+	// a session's other copies again carries this one's records instead of
+	// reading it (#5358). It lasts while the file's size and mtime do.
+	WrittenBack bool `json:"written_back,omitempty"`
 }
 
 type SessionMeta struct {
@@ -943,6 +950,10 @@ type SessionMeta struct {
 	// (#4574).
 	SharedStarted time.Time `json:",omitzero"`
 	SharedUpdated time.Time `json:",omitzero"`
+	// Copies are the other transcripts that hold this id, which a pass that
+	// replaces the session reads with the one that changed (#5358). Empty for
+	// a session one file holds, which is nearly all of them.
+	Copies []string `json:",omitempty"`
 	// OrigID is the id a session had on the machine it came from. Import
 	// renames every session to imported-<hash>, so a promoted note stopped
 	// looking like one the moment it crossed a machine boundary and every rule

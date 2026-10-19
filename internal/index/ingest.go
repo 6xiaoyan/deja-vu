@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -754,7 +755,8 @@ func rebuildWithTombstones(dir string, harness string, scope string, files map[s
 			if ord == 0 {
 				ord = nextSessionOrd(m.Sessions)
 			}
-			owns, collided := claimSession(m.Sessions[key], s)
+			prev := m.Sessions[key]
+			owns, collided := claimSession(prev, s)
 			if !holdsText(s) {
 				emptied.Add(1)
 			}
@@ -762,13 +764,14 @@ func rebuildWithTombstones(dir string, harness string, scope string, files map[s
 				collisions.Add(1)
 			}
 			if owns {
-				m.Sessions[key] = ownerRow(m.Sessions[key], s, ord, collided)
+				m.Sessions[key] = ownerRow(prev, s, ord, collided)
 			} else {
 				widenSpan(m.Sessions, key, s)
 			}
 			if collided {
 				markShared(m.Sessions, key)
 			}
+			recordCopy(m.Sessions, key, prev, s)
 			for _, msg := range s.Messages {
 				if seenMsgs.dup(key, msg.Role, msg.Time, msg.Text) {
 					continue
@@ -976,6 +979,10 @@ func applyRenamedFiles(m *Manifest, renamed map[string]string) map[string]bool {
 			moved, _ = parseAppendedFile("", np, FileState{}, true)
 		}
 		for key, meta := range m.Sessions {
+			if slices.Contains(meta.Copies, op) {
+				renameCopy(&meta, op, np)
+				m.Sessions[key] = meta
+			}
 			if meta.Path == op {
 				meta.Path = np
 				for _, s := range moved {
@@ -1775,7 +1782,8 @@ func writeSessionsWithSync(tmp, dir string, ss []model.Session, files map[string
 			if ord == 0 {
 				ord = nextSessionOrd(m.Sessions)
 			}
-			owns, collided := claimSession(m.Sessions[key], s)
+			prev := m.Sessions[key]
+			owns, collided := claimSession(prev, s)
 			if !holdsText(s) {
 				emptied.Add(1)
 			}
@@ -1783,13 +1791,14 @@ func writeSessionsWithSync(tmp, dir string, ss []model.Session, files map[string
 				collisions.Add(1)
 			}
 			if owns {
-				m.Sessions[key] = ownerRow(m.Sessions[key], s, ord, collided)
+				m.Sessions[key] = ownerRow(prev, s, ord, collided)
 			} else {
 				widenSpan(m.Sessions, key, s)
 			}
 			if collided {
 				markShared(m.Sessions, key)
 			}
+			recordCopy(m.Sessions, key, prev, s)
 			for _, msg := range s.Messages {
 				if seenMsgs.dup(key, msg.Role, msg.Time, msg.Text) {
 					continue
@@ -4381,15 +4390,15 @@ func updateIndexPass(dir, harness, scope string, files map[string]FileState, for
 	// back with the diff folded in (#4207).
 	var diffs []string
 	fromDB := map[string]bool{}
-	for p, f := range changed {
+	read := func(p string, f FileState) {
 		if harnessForPath(p) == "opencode-diff" {
 			diffs = append(diffs, p)
-			continue
+			return
 		}
 		ss, err := parseChangedFile(harness, p, old.Files[p])
 		if err != nil {
 			skip(p, err)
-			continue
+			return
 		}
 		if harnessForPath(p) == "opencode" {
 			for _, s := range ss {
@@ -4398,6 +4407,51 @@ func updateIndexPass(dir, harness, scope string, files map[string]FileState, for
 		}
 		take(p, ss)
 		files[p] = f
+	}
+	for p, f := range changed {
+		read(p, f)
+	}
+	// A session this pass replaces is read from every transcript that holds
+	// it, as a rebuild reads it: the ones that changed, and the copies beside
+	// them that did not (#5358). What those copies hold can name a session
+	// another file holds in turn, so it runs until nothing new is read.
+	copiesRead := 0
+	if heldBy := keysByFile(old.Sessions); len(heldBy) > 0 {
+		var pending []string
+		for p := range changed {
+			pending = append(pending, heldBy[p]...)
+			pending = append(pending, keysFrom[p]...)
+		}
+		for p := range removed {
+			pending = append(pending, heldBy[p]...)
+		}
+		seen, tried := map[string]bool{}, map[string]bool{}
+		for len(pending) > 0 {
+			key := pending[len(pending)-1]
+			pending = pending[:len(pending)-1]
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			meta, ok := old.Sessions[key]
+			if !ok || len(meta.Copies) == 0 {
+				continue
+			}
+			for _, q := range sessionFiles(meta) {
+				// A written-back file holds less than its records do, and
+				// those are carried instead (#4617).
+				f, live := files[q]
+				if _, again := changed[q]; again || tried[q] || !live || kept[q] || f.Kept || f.WrittenBack || !copyable(q) {
+					continue
+				}
+				tried[q] = true
+				copiesRead++
+				changed[q] = f
+				read(q, f)
+				pending = append(pending, heldBy[q]...)
+				pending = append(pending, keysFrom[q]...)
+			}
+		}
 	}
 	var pending []string
 	for _, p := range diffs {
@@ -4501,7 +4555,11 @@ func updateIndexPass(dir, harness, scope string, files map[string]FileState, for
 		// which is a log line for whoever wrote it, on a path every user hits:
 		// the first `deja blame` or search after a day of work prints it above
 		// the answer. Zero counts are left out rather than shown as zero.
-		line := fmt.Sprintf("deja: %s %d changed transcript%s", replacementPassMarker, len(changed), pluralS(len(changed)))
+		n := len(changed) - copiesRead
+		line := fmt.Sprintf("deja: %s %d changed transcript%s", replacementPassMarker, n, pluralS(n))
+		if copiesRead > 0 {
+			line += fmt.Sprintf(", %d cop%s read again", copiesRead, map[bool]string{true: "y", false: "ies"}[copiesRead == 1])
+		}
 		if len(replaceKeys) > 0 {
 			line += fmt.Sprintf(", %d session%s replaced", len(replaceKeys), pluralS(len(replaceKeys)))
 		}
@@ -4601,6 +4659,9 @@ func updateIndexPass(dir, harness, scope string, files map[string]FileState, for
 	// The sessions that lost a record here, which the command failure walk
 	// has to read again along with the ones re-read (#4288).
 	dropped := map[string]bool{}
+	// Seeded with the records carried for a session this pass replaces, so a
+	// turn a kept or skipped copy already holds is not written again.
+	seenMsgs := msgSeen{}
 	if err := eachRecord(filepath.Join(dir, "records.bin"), tablesFromManifest(old), func(r Record) {
 		if recErr != nil {
 			return
@@ -4629,6 +4690,8 @@ func updateIndexPass(dir, harness, scope string, files map[string]FileState, for
 		}
 		if r.SourcePath == "" {
 			dropped[r.Key] = true // addRec does not carry it
+		} else if replaceKeys[r.Key] {
+			seenMsgs.dup(r.Key, r.Role, r.Time, r.Text)
 		}
 		recErr = addRec(r)
 	}); err != nil {
@@ -4639,7 +4702,6 @@ func updateIndexPass(dir, harness, scope string, files map[string]FileState, for
 		_ = rw.Close()
 		return recErr
 	}
-	seenMsgs := msgSeen{}
 	// Ord is the posting's session id, so two sessions sharing one merges
 	// their postings. A replacement reclaims its Ord from the OLD manifest,
 	// which the new map has not seen yet — so a new session picked from
@@ -4672,7 +4734,12 @@ func updateIndexPass(dir, harness, scope string, files map[string]FileState, for
 		if !ok {
 			// The row may exist only in the manifest being replaced.
 			held = old.Sessions[key]
-			if takeovers[key] {
+			// The file that owned it was read again whole and none of its
+			// records were carried: the row starts over from what this pass
+			// reads, as a rebuild starts it. Held, it kept the span and the
+			// owner of a file that may no longer hold the session (#5358).
+			_, again := reread[held.Path]
+			if takeovers[key] || again && copyable(held.Path) {
 				held = SessionMeta{}
 			}
 		}
@@ -4700,6 +4767,7 @@ func updateIndexPass(dir, harness, scope string, files map[string]FileState, for
 		if collided {
 			markShared(m.Sessions, key)
 		}
+		recordCopy(m.Sessions, key, held, s)
 		for _, msg := range s.Messages {
 			if seenMsgs.dup(key, msg.Role, msg.Time, msg.Text) {
 				continue
@@ -4718,6 +4786,7 @@ func updateIndexPass(dir, harness, scope string, files map[string]FileState, for
 	if err := writeBucketsConcurrent(filepath.Join(tmp, "buckets"), buckets); err != nil {
 		return err
 	}
+	settleCopies(&m, old.Sessions, changed, replacements)
 	setDatabaseStoreWatermarks(m.Files, m.Sessions)
 	m.RecordStrings = tbl.strs
 	// Ahead of the commit, which checks its entries against the new log
@@ -5042,6 +5111,7 @@ func appendIncremental(dir, harness, scope string, old Manifest, files map[strin
 		for _, s := range ss {
 			key := s.Harness + ":" + s.ID
 			meta := m.Sessions[key]
+			before := meta
 			named := meta.ID != ""
 			if !named {
 				meta = metaWithOrd(metaForSession(s), nextSessionOrd(m.Sessions))
@@ -5075,7 +5145,9 @@ func appendIncremental(dir, harness, scope string, old Manifest, files map[strin
 			// Only for a file read whole: a known file hands over its tail,
 			// which is not the session. The span stays what both files cover,
 			// as the full build keeps it.
-			if owns && meta.NoText && meta.Path != s.Path && !known {
+			// A new file that sorts ahead of the one holding the row takes it
+			// the same way: a rebuild derives the row from its owner alone.
+			if owns && (meta.NoText || collided) && meta.Path != s.Path && !known {
 				prev := meta
 				meta = ownerRow(prev, s, prev.Ord, collided)
 				if !prev.Started.IsZero() && (meta.Started.IsZero() || prev.Started.Before(meta.Started)) {
@@ -5102,20 +5174,22 @@ func appendIncremental(dir, harness, scope string, old Manifest, files map[strin
 				meta.Path = s.Path
 			}
 			// A row named from the agent's words or tool output takes the
-			// first question that arrives later, as a rebuild names it.
+			// first question that arrives later, as a rebuild names it. Only
+			// the owner names it: a copy's tail renamed the session after its
+			// own newest turn (#5358).
 			outranked := false
-			if s.Title == "" && !titlePlaceholder(meta.Title) {
+			if owns && s.Title == "" && !titlePlaceholder(meta.Title) {
 				t, agent := sessionTitleFrom(s)
 				outranked = titleRankOfRow(t, agent) > titleRankOfRow(meta.Title, meta.AgentTitle)
 			}
-			if titlePlaceholder(meta.Title) || outranked {
+			if owns && (titlePlaceholder(meta.Title) || outranked) {
 				// The incremental fallback redacted nothing at all before; keep
 				// sessionTitleFrom's correct fromAgent bit and redact before the
 				// cut, as the full rebuild does.
 				meta.Title, meta.AgentTitle = sessionTitleFrom(s)
 				meta.Title, _ = redact.Text(meta.Title)
 				meta.Title = truncateTitle(meta.Title, 60)
-			} else if s.Title != "" {
+			} else if owns && s.Title != "" {
 				// A title the source authored is a live value, not a one-time
 				// naming: a promoted note's carries its state, and the loader
 				// rewrites it on every correction. Only the full rebuild took
@@ -5170,6 +5244,7 @@ func appendIncremental(dir, harness, scope string, old Manifest, files map[strin
 					meta.RemoteID = s.RemoteID
 				}
 			}
+			meta.Copies = withCopies(meta.Path, before.Copies, before.Path, s.Path)
 			m.Sessions[key] = meta
 			for _, msg := range s.Messages {
 				// Already redacted (and length-capped) by preRedactSessions above.
@@ -5809,6 +5884,7 @@ func walkFileState(p string, fi os.FileInfo, old map[string]FileState) FileState
 		if of, ok := old[p]; ok && of.Size == fs.Size && of.MTime == fs.MTime {
 			fs.SafeSize, fs.PrefixHash = of.SafeSize, of.PrefixHash
 			fs.PrefixSample = of.PrefixSample
+			fs.WrittenBack = of.WrittenBack
 		} else {
 			fs.SafeSize = lastCompleteLineOffset(p, fi.Size())
 			fs.PrefixSample = filePrefixSample(p, fs.SafeSize)

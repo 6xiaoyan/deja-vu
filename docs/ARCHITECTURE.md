@@ -72,7 +72,7 @@ Files:
 - `buckets/*.bin`: token bucket files. A token maps to compact postings: record offset, session ordinal, and one bit marking the posting as a work record.
 - `recoffsets.bin`: where each session's records sit in `records.bin`, so reading one session back skips the walk over the whole log. It is a cache checked against the log: missing or stale, it costs the walk and nothing else.
 - `frictext.bin`: the first line of each repeated error per session, written at build time so the session-start block does not read those sessions back. `fixraw.gob` keeps every fix pair before judging, so an update judges them as a rebuild does.
-- `manifest.gob` / `sessions.gob`: index version, source file state, redaction counters, sync export watermarks, imported-record dedupe keys, session metadata (including ordinals, the files a session touched most, and hashes of the questions it asked), build time, and search scope.
+- `manifest.gob` / `sessions.gob`: index version, source file state, redaction counters, sync export watermarks, imported-record dedupe keys, session metadata (including ordinals, the files a session touched most, hashes of the questions it asked, and the other transcripts that hold its id), build time, and search scope.
 
 ### Roles
 
