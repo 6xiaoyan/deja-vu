@@ -42,6 +42,15 @@ func (r installResult) touched() []string {
 }
 
 func runInstall(dir string, args []string, uninstall bool) error {
+	// Before this run prints anything: stdout may be a pipe that closes while
+	// the run still has state to write — `deja install aider | head -1` takes
+	// one line and goes, with the config edits already on disk and
+	// `defer recordWiring` still to come. Go answers the next write on such a
+	// stdout with SIGPIPE and dies, skipping every deferred call, so those
+	// edits were never recorded and uninstall had nothing to put the reader's
+	// file back with (#5322). Ignored, the write fails as EPIPE and the run
+	// goes on losing lines rather than state.
+	ignoreSIGPIPE()
 	// Every path deja writes hangs off the home directory, and homeDir()
 	// answers "" when it cannot find one. filepath.Join("", ".claude") is
 	// ".claude", so with HOME unset install wrote .claude/, .claude.json and
