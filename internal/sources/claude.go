@@ -339,6 +339,9 @@ func parseClaudeGenericFromOffset(path string, offset int64) ([]model.Session, e
 		if summary, _ := m["isCompactSummary"].(bool); summary && typ == "user" && role == "user" {
 			role = RoleSummary
 		}
+		if role == "user" {
+			txt = UnwrapPastedContent(txt)
+		}
 		if txt != "" {
 			s.Messages = append(s.Messages, model.Message{Role: role, Text: txt, Time: t})
 		}

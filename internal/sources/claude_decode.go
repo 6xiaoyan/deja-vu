@@ -169,6 +169,9 @@ func parseClaudeTypedWithOptions(path string, scan func(func([]byte)) error,
 		if v.Type == "user" && v.IsCompactSummary && role == "user" {
 			role = RoleSummary
 		}
+		if role == "user" {
+			txt = UnwrapPastedContent(txt)
+		}
 		if txt != "" {
 			// A snapshot run is one reply: the later record carries the longer
 			// text, so it replaces the earlier rather than following it.

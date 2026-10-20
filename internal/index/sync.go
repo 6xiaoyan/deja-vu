@@ -696,7 +696,7 @@ func Import(dir, inDir string) (int, error) {
 			// where the value was, and keyed on what it sent the record landed
 			// twice. The key on the sent text is what older builds wrote, and
 			// is still honoured.
-			text, cnt := redact.Text(sr.Text)
+			text, cnt := redact.Text(carriedText(sr.Harness, sr.Role, sr.Text))
 			th := fnv.New64a()
 			_, _ = th.Write([]byte(text))
 			rawHash := th.Sum64()

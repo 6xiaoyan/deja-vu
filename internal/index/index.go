@@ -762,7 +762,12 @@ import (
 // are one word.
 // 90: a row names every transcript that holds its id, and a pass that
 // replaces the session reads them all (#5358).
-const version = 90
+// 91: a Claude Code prompt no longer carries the <pasted_content id="…">
+// wrapper around pasted text, only the text. The tags titled sessions, gave
+// the install's demo question the topic "pasted_content set" and were indexed
+// as terms; the rebuild unwraps the sessions it carries from records.bin too
+// (deleted, compacted away, imported), and a sync import unwraps on arrival.
+const version = 91
 
 // onDiskFormat is how the store is laid out on disk — the record encoding, the
 // bucket encoding, the manifest's own shape. It moves only when a reader of an

@@ -951,10 +951,11 @@ func importedSessions(dir string) importedState {
 			}
 			cp := sessionFromMeta(meta)
 			cp.Path = syncImportPath
+			retitleWrappedPaste(&cp)
 			s = &cp
 			by[r.Key] = s
 		}
-		s.Messages = append(s.Messages, model.Message{Role: r.Role, Text: r.Text, Time: r.Time})
+		s.Messages = append(s.Messages, model.Message{Role: r.Role, Text: carriedText(s.Harness, r.Role, r.Text), Time: r.Time})
 	})
 	for _, sess := range by {
 		deriveImportedNoteState(sess)
@@ -1212,10 +1213,11 @@ func orphanedSessions(dir, harness string, files map[string]FileState) orphanSta
 			}
 			cp := sessionFromMeta(meta)
 			cp.Path = r.SourcePath
+			retitleWrappedPaste(&cp)
 			s = &cp
 			by[r.Key] = s
 		}
-		s.Messages = append(s.Messages, model.Message{Role: r.Role, Text: r.Text, Time: r.Time})
+		s.Messages = append(s.Messages, model.Message{Role: r.Role, Text: carriedText(s.Harness, r.Role, r.Text), Time: r.Time})
 	})
 	for _, key := range sortedKeys(by) {
 		out.sessions = append(out.sessions, *by[key])
@@ -2885,6 +2887,29 @@ func sessionFromMeta(meta SessionMeta) model.Session {
 		Words:  meta.Words,
 		Kind:   meta.Kind, Parent: meta.Parent, Agent: meta.Agent,
 		OrigID: meta.OrigID, RemoteID: meta.RemoteID, From: meta.From, Lifecycle: meta.Lifecycle, LifecycleNote: meta.LifecycleNote, LifecycleAt: meta.LifecycleAt,
+	}
+}
+
+// carriedText is a stored or synced turn's text as this version's reader
+// hands it back. A rebuild re-reads every transcript it still can, but a
+// session whose transcript is gone, compacted away or imported is rebuilt from
+// records.bin, which holds what an older reader stored, and a peer on an older
+// build sends the same — for Claude Code, a prompt still inside its
+// <pasted_content> wrapper.
+func carriedText(harness, role, text string) string {
+	if harness == "claude" && role == "user" {
+		return sources.UnwrapPastedContent(text)
+	}
+	return text
+}
+
+// retitleWrappedPaste clears a title an older reader cut from a prompt still
+// inside its paste wrapper, so metaForSession derives it again from the
+// unwrapped turns.
+func retitleWrappedPaste(s *model.Session) {
+	if s.Harness == "claude" && strings.Contains(s.Title, "<pasted_content id=") {
+		s.Title = ""
+		s.AgentTitle = false
 	}
 }
 
