@@ -186,6 +186,13 @@
     <summary>Agents write every command output to plaintext transcripts. One machine held 84 credentials in 42 sessions. How to find yours, and what to do about them.</summary>
   </entry>
   <entry>
+    <title>How to delete CodeBuddy session history — deja-vu</title>
+    <id>https://vshulcz.github.io/deja-vu/guide/delete-codebuddy-sessions.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/delete-codebuddy-sessions.html"></link>
+    <updated>2026-10-16T00:00:00Z</updated>
+    <summary>How to delete CodeBuddy Code and WorkBuddy sessions — the .jsonl conversation, its .meta.json, rollback sidecar and file-history snapshots.</summary>
+  </entry>
+  <entry>
     <title>Delete Copilot CLI session history — deja-vu</title>
     <id>https://vshulcz.github.io/deja-vu/guide/delete-copilot-cli-session-history.html</id>
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/delete-copilot-cli-session-history.html"></link>
@@ -282,12 +289,5 @@
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/zh/guide/delete-old-claude-sessions.html"></link>
     <updated>2026-10-15T00:00:00Z</updated>
     <summary>find ~/.claude/projects -mtime +30 -delete 一条命令就能清掉，cleanupPeriodDays 则按时间自动清——以及为什么按时间删腾出的磁盘远比按大小删少。</summary>
-  </entry>
-  <entry>
-    <title>Persistent memory for coding agents over MCP — deja-vu</title>
-    <id>https://vshulcz.github.io/deja-vu/guide/agents.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/agents.html"></link>
-    <updated>2026-10-14T00:00:00Z</updated>
-    <summary>How deja gives coding agents a searchable memory over MCP: one tool with recall, context, blame, fix, how, orient, remember and handoff modes.</summary>
   </entry>
 </feed>
