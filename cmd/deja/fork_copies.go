@@ -14,54 +14,187 @@ import (
 // unmarked one (claude --fork-session, opencode --fork) is read whole and
 // judged by what it holds, which costs a read only for the pairs maybe says
 // look alike (#5320).
-func copySources(dir string, ss []model.Session, maybe func(src, c model.Session) bool) map[int]int {
+func copySources(dir string, ss []model.Session, maybe func(src, c int, sameShape bool) bool) map[int]int {
 	out := map[int]int{}
-	var unread [][2]int
+	shapes := copyMessageShapes(ss)
+	type classKey struct {
+		harness string
+		shape   int
+		fork    bool
+		started time.Time
+	}
+	type peerClass struct {
+		at    []int
+		equal bool
+	}
+	classes := map[classKey]int{}
+	var peers []peerClass
+	classOf := make([]int, len(ss))
+	identities := make([]index.Identity, len(ss))
+	for i, s := range ss {
+		identities[i] = index.Identity{Harness: s.Harness, ID: s.ID}
+		key := classKey{s.Harness, shapes[i], s.Kind == "fork", s.Started.Round(0).UTC()}
+		k, ok := classes[key]
+		if !ok {
+			k = len(peers)
+			classes[key] = k
+			peers = append(peers, peerClass{equal: s.Kind != "fork"})
+		} else if !ss[peers[k].at[0]].Started.Equal(s.Started) {
+			peers[k].equal = false
+		}
+		peers[k].at = append(peers[k].at, i)
+		classOf[i] = k
+	}
+	eligible := func(i, j int) bool {
+		return i != j && ss[i].Harness == ss[j].Harness && maybe(j, i, shapes[i] == shapes[j])
+	}
+	needed := make([]bool, len(ss))
 	for i, c := range ss {
-		for j, src := range ss {
-			if i == j || c.Harness != src.Harness || !maybe(src, c) {
+		first := len(ss)
+		for k, group := range peers {
+			// Equal ordinary peers have neither ancestry nor an earlier start.
+			// Keep the class pending without materializing its directed pairs.
+			if k == classOf[i] && group.equal {
 				continue
 			}
-			if search.SourceOf(ss, src, c, src.Started) && !search.SourceOf(ss, c, src, c.Started) {
-				out[i] = j
-				break
+			for _, j := range group.at {
+				if j >= first {
+					break
+				}
+				if !eligible(i, j) {
+					continue
+				}
+				src := ss[j]
+				if search.SourceOf(ss, src, c, src.Started) && !search.SourceOf(ss, c, src, c.Started) {
+					first = j
+				} else {
+					needed[i], needed[j] = true, true
+				}
 			}
-			unread = append(unread, [2]int{i, j})
+		}
+		if first < len(ss) {
+			out[i] = first
 		}
 	}
-	if len(unread) == 0 || dir == "" {
+	if dir == "" {
 		return out
 	}
-	var ids []index.Identity
-	seen := map[int]bool{}
-	for _, p := range unread {
-		for _, k := range p {
-			if !seen[k] {
-				seen[k] = true
-				ids = append(ids, index.Identity{Harness: ss[k].Harness, ID: ss[k].ID})
+	for _, group := range peers {
+		if !group.equal {
+			continue
+		}
+		// A pure maybe predicate may differ between members. Find one outgoing
+		// or incoming witness for each identity instead of storing every edge.
+		for _, i := range group.at {
+			if _, done := out[i]; done || needed[i] {
+				continue
 			}
+			for _, j := range group.at {
+				if eligible(i, j) {
+					needed[i], needed[j] = true, true
+					break
+				}
+			}
+		}
+		for _, j := range group.at {
+			if needed[j] {
+				continue
+			}
+			for _, i := range group.at {
+				if _, done := out[i]; !done && eligible(i, j) {
+					needed[i], needed[j] = true, true
+					break
+				}
+			}
+		}
+	}
+	var ids []index.Identity
+	seen := map[index.Identity]bool{}
+	for i, id := range identities {
+		if needed[i] && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
 		}
 	}
 	full, err := index.FindManyByIdentity(dir, ids)
 	if err != nil {
 		return out
 	}
-	whole := map[string]model.Session{}
-	for _, s := range full {
-		whole[s.Harness+":"+s.ID] = s
+	whole := map[index.Identity]int{}
+	fullShapes := copyMessageShapes(full)
+	for i, s := range full {
+		whole[index.Identity{Harness: s.Harness, ID: s.ID}] = i
 	}
-	for _, p := range unread {
-		i, j := p[0], p[1]
-		if _, done := out[i]; done {
+	// Partial peers can have different full records: regroup only after each
+	// needed identity has been read. CopyOf depends on the message shape alone.
+	classes = map[classKey]int{}
+	var complete [][]int
+	var representatives []int
+	fixed := make([]bool, len(ss))
+	for i, id := range identities {
+		_, fixed[i] = out[i]
+		f, ok := whole[id]
+		if !ok {
 			continue
 		}
-		c, okc := whole[ss[i].Harness+":"+ss[i].ID]
-		src, oks := whole[ss[j].Harness+":"+ss[j].ID]
-		if okc && oks && search.CopyOf(c, src) {
-			out[i] = j
+		key := classKey{harness: ss[i].Harness, shape: fullShapes[f]}
+		k, ok := classes[key]
+		if !ok {
+			k = len(complete)
+			classes[key] = k
+			complete = append(complete, nil)
+			representatives = append(representatives, f)
+		}
+		complete[k] = append(complete[k], i)
+	}
+	for c, candidates := range complete {
+		for src, sources := range complete {
+			if c == src || full[representatives[c]].Harness != full[representatives[src]].Harness || !search.CopyOf(full[representatives[c]], full[representatives[src]]) {
+				continue
+			}
+			for _, i := range candidates {
+				if fixed[i] {
+					continue
+				}
+				for _, j := range sources {
+					if previous, done := out[i]; done && previous <= j {
+						break
+					}
+					if eligible(i, j) {
+						out[i] = j
+						break
+					}
+				}
+			}
 		}
 	}
 	return out
+}
+
+// copyMessageShapes preserves every field used by CopyOf, including zero-time eligibility.
+func copyMessageShapes(ss []model.Session) []int {
+	shapes := make([]int, len(ss))
+	classes := map[string]int{}
+	var key []byte
+	for i, s := range ss {
+		key = key[:0]
+		for _, m := range s.Messages {
+			key = strconv.AppendQuote(key, m.Role)
+			key = append(key, ':')
+			key = strconv.AppendInt(key, m.Time.UnixNano(), 10)
+			key = append(key, ':')
+			key = strconv.AppendBool(key, m.Time.IsZero())
+			key = append(key, ':')
+			key = strconv.AppendQuote(key, m.Text)
+			key = append(key, '\n')
+		}
+		shape := string(key)
+		if _, ok := classes[shape]; !ok {
+			classes[shape] = len(classes) + 1
+		}
+		shapes[i] = classes[shape]
+	}
+	return shapes
 }
 
 // dropCopiedHits leaves out a hit whose every matched turn sits, at the same
@@ -91,10 +224,20 @@ func dropCopiedHits(dir string, hits []search.Hit) []search.Hit {
 			continue
 		}
 		ss := make([]model.Session, len(at))
+		turns := make([]map[string]bool, len(at))
 		for j, i := range at {
 			ss[j] = hits[i].Session
+			turns[j] = make(map[string]bool, len(ss[j].Messages))
+			for _, m := range ss[j].Messages {
+				if !m.Time.IsZero() {
+					k := m.Role + "\x00" + strconv.FormatInt(m.Time.UnixNano(), 10) + "\x00" + m.Text
+					turns[j][k] = true
+				}
+			}
 		}
-		for j := range copySources(dir, ss, func(src, c model.Session) bool { return heldTurns(src, c) }) {
+		for j := range copySources(dir, ss, func(src, c int, sameShape bool) bool {
+			return (sameShape && len(turns[c]) > 0) || heldTurns(turns[src], turns[c])
+		}) {
 			drop[at[j]] = true
 		}
 	}
@@ -112,34 +255,21 @@ func dropCopiedHits(dir string, hits []search.Hit) []search.Hit {
 
 // heldTurns reports whether every timed message of c is in src, the same role,
 // time and text, and c has at least one.
-func heldTurns(src, c model.Session) bool {
-	key := func(m model.Message) string {
-		return m.Role + "\x00" + strconv.FormatInt(m.Time.UnixNano(), 10) + "\x00" + m.Text
-	}
-	have := make(map[string]bool, len(src.Messages))
-	for _, m := range src.Messages {
-		if !m.Time.IsZero() {
-			have[key(m)] = true
-		}
-	}
-	n := 0
-	for _, m := range c.Messages {
-		if m.Time.IsZero() {
-			continue
-		}
-		if !have[key(m)] {
+func heldTurns(src, c map[string]bool) bool {
+	for key := range c {
+		if !src[key] {
 			return false
 		}
-		n++
 	}
-	return n > 0
+	return len(c) > 0
 }
 
 // markForkTitles prefixes the title of a session listed beside the session it
 // was forked or copied from: both open on the same turn, so `last` showed two
 // rows under one title.
 func markForkTitles(dir string, ss []model.Session) {
-	copies := copySources(dir, ss, func(src, c model.Session) bool {
+	copies := copySources(dir, ss, func(i, j int, _ bool) bool {
+		src, c := ss[i], ss[j]
 		if lastTitle(src) != lastTitle(c) {
 			return false
 		}

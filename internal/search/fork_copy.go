@@ -2,7 +2,6 @@ package search
 
 import (
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -21,18 +20,14 @@ func CopyOf(c, src model.Session) bool {
 // holdsLastTurn reports whether holder has other's last timed turn, the same
 // role, time and text. A reply the harness wrote on its own is passed over.
 func holdsLastTurn(holder, other model.Session) bool {
-	key := func(m model.Message) string {
-		return m.Role + "\x00" + strconv.FormatInt(m.Time.UnixNano(), 10) + "\x00" + m.Text
-	}
 	for i := len(other.Messages) - 1; i >= 0; i-- {
 		m := other.Messages[i]
 		t := strings.TrimSpace(m.Text)
 		if m.Time.IsZero() || t == "" || m.Role == roleSummary || (m.Role == "assistant" && t == "No response requested.") {
 			continue
 		}
-		want := key(m)
 		for _, h := range holder.Messages {
-			if key(h) == want {
+			if h.Role == m.Role && h.Time.UnixNano() == m.Time.UnixNano() && h.Text == m.Text {
 				return true
 			}
 		}
