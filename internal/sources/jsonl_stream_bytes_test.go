@@ -307,3 +307,242 @@ func TestLastClaudeKeyBeforeStreamsALongLine(t *testing.T) {
 		t.Errorf("before the long line: key %q found %v, want a", key, found)
 	}
 }
+
+// writeLongGrokFile writes a Grok session transcript where a tool_call event is
+// one line of size bytes.
+func writeLongGrokFile(t *testing.T, size int) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "sessions", "work", "s1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	summary := `{"info":{"id":"s1","cwd":"/work"},"created_at":"2026-10-01T10:00:00Z","updated_at":"2026-10-01T10:00:05Z"}`
+	if err := os.WriteFile(filepath.Join(dir, "summary.json"), []byte(summary), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, "updates.jsonl")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := bufio.NewWriter(f)
+	fmt.Fprintln(w, `{"timestamp":1782900001,"method":"session/update","params":{"update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"hello"}}}}`)
+	fmt.Fprint(w, `{"timestamp":1782900002,"method":"session/update","params":{"update":{"sessionUpdate":"tool_call","content":{"type":"text","text":"`)
+	chunk := strings.Repeat("output text chunk\\n", 1<<12)
+	for n := 0; n < size; n += len(chunk) {
+		fmt.Fprint(w, chunk)
+	}
+	fmt.Fprintln(w, `"}}}`)
+	fmt.Fprintln(w, `{"timestamp":1782900003,"method":"session/update","params":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"done"}}}}`)
+	if err := w.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	return p
+}
+
+// A Grok tool output line far past the buffer is read in memory bounded by the
+// cap, not the line (#5424).
+func TestParseGrokHoldsALongLineByItsCut(t *testing.T) {
+	if testing.Short() {
+		t.Skip("writes an 8 MB line")
+	}
+	defer func(n int) { longStringCap = n }(longStringCap)
+	longStringCap = 16 << 10
+	var refills atomic.Uint64
+	newReader := jsonlReaders.New
+	jsonlReaders.New = func() any { refills.Add(1); return newReader() }
+	defer func() { jsonlReaders.New = newReader }()
+	parse := func(size int) uint64 {
+		p := writeLongGrokFile(t, size)
+		var before, after runtime.MemStats
+		runtime.GC()
+		refills.Store(0)
+		gc, procs := debug.SetGCPercent(-1), runtime.GOMAXPROCS(1)
+		runtime.ReadMemStats(&before)
+		ss, err := ParseGrokFile(p)
+		runtime.ReadMemStats(&after)
+		debug.SetGCPercent(gc)
+		runtime.GOMAXPROCS(procs)
+		if err != nil || len(ss) != 1 {
+			t.Fatalf("parse: %v, %d sessions", err, len(ss))
+		}
+		if n := refills.Load(); n > 3 {
+			t.Errorf("a %d MB line made %d read buffers", size>>20, n)
+		}
+		return after.TotalAlloc - before.TotalAlloc - refills.Load()*jsonlBuffer
+	}
+	small, large := parse(2<<20), parse(8<<20)
+	if large > small+1<<20 {
+		t.Errorf("a 2 MB line allocated %d KB and an 8 MB one %d KB", small>>10, large>>10)
+	}
+}
+
+// CommandCodeSessionDir streams a long line before cwd without holding it (#5424).
+func TestCommandCodeSessionDirStreamsALongLine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("writes an 8 MB line")
+	}
+	defer func(n int) { longStringCap = n }(longStringCap)
+	longStringCap = 16 << 10
+	var refills atomic.Uint64
+	newReader := jsonlReaders.New
+	jsonlReaders.New = func() any { refills.Add(1); return newReader() }
+	defer func() { jsonlReaders.New = newReader }()
+	scan := func(size int) uint64 {
+		dir := t.TempDir()
+		p := filepath.Join(dir, "cmd.jsonl")
+		f, err := os.Create(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := bufio.NewWriter(f)
+		fmt.Fprint(w, `{"type":"tool_result","content":"`)
+		chunk := strings.Repeat("long output chunk\\n", 1<<12)
+		for n := 0; n < size; n += len(chunk) {
+			fmt.Fprint(w, chunk)
+		}
+		fmt.Fprintln(w, `"}`)
+		wantCWD := filepath.Join(dir, "work")
+		fmt.Fprintf(w, `{"type":"session","cwd":%q}`+"\n", wantCWD)
+		if err := w.Flush(); err != nil {
+			t.Fatal(err)
+		}
+		_ = f.Close()
+
+		var before, after runtime.MemStats
+		runtime.GC()
+		refills.Store(0)
+		gc, procs := debug.SetGCPercent(-1), runtime.GOMAXPROCS(1)
+		runtime.ReadMemStats(&before)
+		cwd := CommandCodeSessionDir(p)
+		runtime.ReadMemStats(&after)
+		debug.SetGCPercent(gc)
+		runtime.GOMAXPROCS(procs)
+		if cwd != wantCWD {
+			t.Fatalf("got cwd %q, want %q", cwd, wantCWD)
+		}
+		return after.TotalAlloc - before.TotalAlloc - refills.Load()*jsonlBuffer
+	}
+	small, large := scan(2<<20), scan(8<<20)
+	if large > small+1<<20 {
+		t.Errorf("a 2 MB line allocated %d KB and an 8 MB one %d KB", small>>10, large>>10)
+	}
+}
+
+// eachLineFrom streams a long line past the buffer without holding it (#5424).
+func TestEachLineFromHoldsALongLineByItsCut(t *testing.T) {
+	if testing.Short() {
+		t.Skip("writes an 8 MB line")
+	}
+	defer func(n int) { longStringCap = n }(longStringCap)
+	longStringCap = 16 << 10
+	var refills atomic.Uint64
+	newReader := jsonlReaders.New
+	jsonlReaders.New = func() any { refills.Add(1); return newReader() }
+	defer func() { jsonlReaders.New = newReader }()
+	scan := func(size int) uint64 {
+		p := filepath.Join(t.TempDir(), "stream.jsonl")
+		f, err := os.Create(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := bufio.NewWriter(f)
+		fmt.Fprint(w, `{"type":"tool_result","text":"`)
+		chunk := strings.Repeat("long line chunk\\n", 1<<12)
+		for n := 0; n < size; n += len(chunk) {
+			fmt.Fprint(w, chunk)
+		}
+		fmt.Fprintln(w, `"}`)
+		fmt.Fprintln(w, `{"type":"assistant","text":"done"}`)
+		if err := w.Flush(); err != nil {
+			t.Fatal(err)
+		}
+		_ = f.Close()
+
+		var before, after runtime.MemStats
+		runtime.GC()
+		refills.Store(0)
+		gc, procs := debug.SetGCPercent(-1), runtime.GOMAXPROCS(1)
+		runtime.ReadMemStats(&before)
+		count := 0
+		eachLineFrom(p, 0, func(line []byte) bool {
+			count++
+			return true
+		})
+		runtime.ReadMemStats(&after)
+		debug.SetGCPercent(gc)
+		runtime.GOMAXPROCS(procs)
+		if count != 2 {
+			t.Fatalf("counted %d lines, want 2", count)
+		}
+		return after.TotalAlloc - before.TotalAlloc - refills.Load()*jsonlBuffer
+	}
+	small, large := scan(2<<20), scan(8<<20)
+	if large > small+1<<20 {
+		t.Errorf("a 2 MB line allocated %d KB and an 8 MB one %d KB", small>>10, large>>10)
+	}
+}
+
+// Kimi and Kiro resume checks stream past long lines (#5424).
+func TestKimiAndKiroResumesWithLongLine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("writes a 4 MB line")
+	}
+	t.Run("kimi", func(t *testing.T) {
+		p := filepath.Join(t.TempDir(), "wire.jsonl")
+		f, err := os.Create(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := bufio.NewWriter(f)
+		line1 := `{"type":"context.append_loop_event","event":{"type":"tool.call"}}` + "\n"
+		fmt.Fprint(w, line1)
+		off := int64(len(line1))
+
+		fmt.Fprint(w, `{"type":"context.append_loop_event","event":{"type":"progress","data":"`)
+		chunk := strings.Repeat("long output\\n", 1<<12)
+		for n := 0; n < 4<<20; n += len(chunk) {
+			fmt.Fprint(w, chunk)
+		}
+		fmt.Fprintln(w, `"}}`)
+		fmt.Fprintln(w, `{"type":"context.append_message","message":{"role":"user"}}`)
+		if err := w.Flush(); err != nil {
+			t.Fatal(err)
+		}
+		_ = f.Close()
+
+		if KimiResumes(p, off) {
+			t.Error("KimiResumes should return false when a user turn follows the long line")
+		}
+	})
+
+	t.Run("kiro", func(t *testing.T) {
+		p := filepath.Join(t.TempDir(), "s.jsonl")
+		f, err := os.Create(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := bufio.NewWriter(f)
+		head := `{"version":"v1","kind":"Prompt","data":{"message_id":"m1","content":[{"kind":"text","data":"fix the retry loop"}]}}` + "\n" +
+			`{"version":"v1","kind":"AssistantMessage","data":{"message_id":"m2","content":[{"kind":"text","data":"Checking"}]}}` + "\n"
+		fmt.Fprint(w, head)
+		off := int64(len(head))
+
+		fmt.Fprint(w, `{"version":"v1","kind":"ToolResults","data":{"message_id":"m3","content":[{"kind":"output","data":"`)
+		chunk := strings.Repeat("long output\\n", 1<<12)
+		for n := 0; n < 4<<20; n += len(chunk) {
+			fmt.Fprint(w, chunk)
+		}
+		fmt.Fprintln(w, `"}]}}`)
+		fmt.Fprintln(w, `{"version":"v1","kind":"AssistantMessage","data":{"message_id":"m2","content":[{"kind":"text","data":" the loop."}]}}`)
+		if err := w.Flush(); err != nil {
+			t.Fatal(err)
+		}
+		_ = f.Close()
+
+		if KiroCLIResumes(p, off) {
+			t.Error("KiroCLIResumes should return false when tail continues the reply past the long line")
+		}
+	})
+}
