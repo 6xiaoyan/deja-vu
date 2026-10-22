@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under the new name, so `deja blame` and `deja restore` find them there.
   Codex, opencode, Copilot CLI, OpenClaw, pi, Cline, Roo and Amp filed them
   under the old path (#595).
+- `deja blame` attributes lines written by CodeWhale's `write_file` and
+  `fim_edit` (the latter read from its result), and `deja blame` and
+  `deja restore` see the symbol a Crush `lsp_replace_symbol` replaced (from
+  the result's metadata) and the lines a Reasonix `delete_symbol` cut (from
+  the diff it returns). Each kept only the path, or only the written side
+  (#595).
 - `deja blame` attributes a line a Copilot agent wrote with
   `insert_edit_into_file`. The transcript reader kept only the file's path
   (#595).

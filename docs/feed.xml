@@ -11,11 +11,32 @@
     <name>vshulcz</name>
   </author>
   <entry>
+    <title>Where CodeWhale stores its history — session format</title>
+    <id>https://vshulcz.github.io/deja-vu/registry/codewhale.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/registry/codewhale.html"></link>
+    <updated>2026-10-22T00:00:00Z</updated>
+    <summary>Where CodeWhale writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.</summary>
+  </entry>
+  <entry>
     <title>Where VS Code Copilot Chat stores its history — session format</title>
     <id>https://vshulcz.github.io/deja-vu/registry/copilot-chat.html</id>
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/registry/copilot-chat.html"></link>
     <updated>2026-10-22T00:00:00Z</updated>
     <summary>Where VS Code Copilot Chat writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.</summary>
+  </entry>
+  <entry>
+    <title>Where Crush stores its history — session format</title>
+    <id>https://vshulcz.github.io/deja-vu/registry/crush.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/registry/crush.html"></link>
+    <updated>2026-10-22T00:00:00Z</updated>
+    <summary>Where Crush writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.</summary>
+  </entry>
+  <entry>
+    <title>Where Reasonix stores its history — session format</title>
+    <id>https://vshulcz.github.io/deja-vu/registry/reasonix.html</id>
+    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/registry/reasonix.html"></link>
+    <updated>2026-10-22T00:00:00Z</updated>
+    <summary>Where Reasonix writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.</summary>
   </entry>
   <entry>
     <title>deja-vu — the one memory your coding agents share</title>
@@ -268,26 +289,5 @@
     <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/zh/guide/memory-for-cursor.html"></link>
     <updated>2026-10-16T00:00:00Z</updated>
     <summary>如何让 Cursor 查到这台机器上每个编程智能体的会话：它的 SQLite 聊天记录存在哪，以及 deja install cursor-auto 写入了什么。</summary>
-  </entry>
-  <entry>
-    <title>隐私：索引什么、脱敏什么、什么都不外传 — deja-vu</title>
-    <id>https://vshulcz.github.io/deja-vu/zh/guide/privacy.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/zh/guide/privacy.html"></link>
-    <updated>2026-10-16T00:00:00Z</updated>
-    <summary>deja 索引的是可能含有凭据的会话历史：索引和检索都在本地，凭据在写入前就被脱敏，排除、遗忘与信任范围决定留下什么。</summary>
-  </entry>
-  <entry>
-    <title>Memory plugins for Claude Code, Codex and Cursor, compared</title>
-    <id>https://vshulcz.github.io/deja-vu/guide/compare.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/compare.html"></link>
-    <updated>2026-10-15T00:00:00Z</updated>
-    <summary>deja-vu next to claude-mem, agentmemory, MemPalace, Mem0, Letta, CASS, ctx and agentsview: what each captures, where it keeps it, how it scores.</summary>
-  </entry>
-  <entry>
-    <title>Delete Kimi Code session history — deja-vu</title>
-    <id>https://vshulcz.github.io/deja-vu/guide/delete-kimi-code-session-history.html</id>
-    <link rel="alternate" type="text/html" href="https://vshulcz.github.io/deja-vu/guide/delete-kimi-code-session-history.html"></link>
-    <updated>2026-10-15T00:00:00Z</updated>
-    <summary>Kimi Code keeps each session in its own directory. Find it, remove one session or all, and delete the state.json that would still list it.</summary>
   </entry>
 </feed>
