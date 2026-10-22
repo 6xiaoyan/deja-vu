@@ -1125,7 +1125,7 @@ func rebuildWithTombstones(dir string, harness string, scope string, files map[s
 		if owns {
 			row := ownerRow(prev, s, texts[i].row(s), ord, collided)
 			if kept, ok := orphans.rows[orphanKey(key, s.Path)]; ok {
-				row.Counted, row.Words, row.LastMsg, row.Opening = kept.Counted, kept.Words, kept.LastMsg, kept.Opening
+				row = withKeptRow(row, kept, orphans.current)
 			}
 			m.Sessions[key] = row
 		} else {
@@ -1459,6 +1459,8 @@ type orphanState struct {
 	// dated is the old manifest's KeptDated: a row first found gone here is
 	// dated only when the store before this build dated its own.
 	dated bool
+	// current is whether this version wrote the old manifest.
+	current bool
 	// bare are the kept copies whose every turn was filed under another file
 	// of the session, by key. They hold no records and stay the session's
 	// copies, so a rewrite of the file holding their turns leaves them here.
@@ -1486,6 +1488,7 @@ func orphanedSessions(dir, harness string, files map[string]FileState) orphanSta
 		return out
 	}
 	out.dated = m.KeptDated
+	out.current = m.Version == version
 	want := map[string]bool{}
 	var present map[string]bool
 	moved := map[string]bool{}
@@ -1616,6 +1619,23 @@ func orphanedSessions(dir, harness string, files map[string]FileState) orphanSta
 		out.unreadable++
 	}
 	return out
+}
+
+// withKeptRow is row with what the pass read off a deleted transcript when it
+// was on disk. Its records are not the file: a turn another copy holds was
+// filed under one of them, and the log holds them in the order passes wrote
+// them, so what is read off them in order (the conclusion, the friction lines
+// and questions up to their caps) came back other than the pass had it
+// (#5535). Those are taken only from a row this version wrote: a version bump
+// that changes how they are read, or what is redacted from the conclusion,
+// recomputes them from the records.
+func withKeptRow(row, kept SessionMeta, sameVersion bool) SessionMeta {
+	row.Counted, row.Words, row.LastMsg, row.Opening = kept.Counted, kept.Words, kept.LastMsg, kept.Opening
+	if sameVersion {
+		row.Settled, row.RanCommand, row.Asked, row.Hit, row.GaveUp = kept.Settled, kept.RanCommand, kept.Asked, kept.Hit, kept.GaveUp
+		row.Touched, row.TouchHits = kept.Touched, kept.TouchHits
+	}
+	return row
 }
 
 // keepCopyOrder puts the copies of a session that has a kept file in the
@@ -2866,7 +2886,9 @@ func dropRepeatedMessages(ms []model.Message) []model.Message {
 // message of the session in seen so its records are not written twice. Only a
 // message no newer than the row can repeat one, so a tail that is all new
 // reads nothing.
-func dropStoredRepeats(rw *recordWriter, dir string, s *model.Session, row SessionMeta, seen msgSeen) {
+// files says which copies are kept, and from is where the tail was read from
+// in a file the last pass held, nil for one read whole.
+func dropStoredRepeats(rw *recordWriter, dir string, s *model.Session, row SessionMeta, seen msgSeen, files map[string]FileState, harness string, from *FileState) {
 	if row.ID == "" {
 		return
 	}
@@ -2882,13 +2904,19 @@ func dropStoredRepeats(rw *recordWriter, dir string, s *model.Session, row Sessi
 	}
 	key := s.Harness + ":" + s.ID
 	stored := map[repeatKey]bool{}
+	elsewhere := map[repeatKey]bool{}
 	if err := eachRecordForKeys(filepath.Join(dir, "records.bin"), rw.tables, map[string]bool{key: true}, func(r Record) {
 		seen.dup(key, r.Role, r.Time, r.Text)
 		if r.SourcePath == s.Path {
 			stored[repeatKeyOf(r.Role, r.Time, r.Text)] = true
+		} else if files[r.SourcePath].Kept {
+			elsewhere[repeatKeyOf(r.Role, r.Time, r.Text)] = true
 		}
 	}); err != nil {
 		return
+	}
+	if from != nil {
+		heldBefore(s, stored, elsewhere, harness, *from)
 	}
 	out := s.Messages[:0]
 	for _, m := range s.Messages {
@@ -2898,6 +2926,57 @@ func dropStoredRepeats(rw *recordWriter, dir string, s *model.Session, row Sessi
 		out = append(out, m)
 	}
 	s.Messages = out
+}
+
+// heldBefore adds to stored the messages of the tail s the file already held
+// before it whose record is filed under a deleted copy of the session: a turn a
+// deleted transcript shares with one on disk stays filed under the deleted
+// one, so the file's own records do not show the live file held it, and its
+// repeat in the tail was counted as a new turn where a rebuild of the file
+// counts it once (#5544). Only then is the file read again, whole and from
+// where the tail starts, to tell such a repeat from a turn of the other copy
+// the file takes up for the first time: what the file holds beyond the tail
+// is what it held before. Keyed on the redacted text, as the tail and the
+// records are.
+func heldBefore(s *model.Session, stored, elsewhere map[repeatKey]bool, harness string, from FileState) {
+	want := map[repeatKey]bool{}
+	for _, m := range s.Messages {
+		if k := repeatKeyOf(m.Role, m.Time, m.Text); elsewhere[k] && !stored[k] && !m.Time.IsZero() {
+			want[k] = true
+		}
+	}
+	if len(want) == 0 {
+		return
+	}
+	count := func(ss []model.Session, sign int, into map[repeatKey]int) {
+		for _, w := range ss {
+			if w.Harness != s.Harness || w.ID != s.ID {
+				continue
+			}
+			for _, m := range w.Messages {
+				text, _, _ := indexedText(m.Text)
+				if k := repeatKeyOf(m.Role, m.Time, text); want[k] {
+					into[k] += sign
+				}
+			}
+		}
+	}
+	whole, err := parseAppendedFile(harness, s.Path, FileState{}, true)
+	if err != nil {
+		return
+	}
+	tail, err := parseAppendedFile(harness, s.Path, from, false)
+	if err != nil {
+		return
+	}
+	before := map[repeatKey]int{}
+	count(whole, 1, before)
+	count(tail, -1, before)
+	for k, n := range before {
+		if n > 0 {
+			stored[k] = true
+		}
+	}
 }
 
 func metaForSession(s model.Session) SessionMeta { return textOf(s).row(s) }
@@ -5958,8 +6037,8 @@ func updateIndexPass(dir, harness, scope string, files map[string]FileState, for
 		if owns {
 			next := ownerRow(row, cp, metaForSession(cp), row.Ord, collided)
 			// What the records cannot count, as the rebuild carries it.
-			if was := old.Sessions[key]; q == keptOwner[key] {
-				next.Counted, next.Words, next.LastMsg, next.Opening = was.Counted, was.Words, was.LastMsg, was.Opening
+			if q == keptOwner[key] {
+				next = withKeptRow(next, old.Sessions[key], true)
 			}
 			m.Sessions[key] = next
 		} else {
@@ -6393,7 +6472,11 @@ func appendIncremental(dir, harness, scope string, old Manifest, files map[strin
 		// path had touched it last.
 		preRedactSessions(&m, ss)
 		for i := range ss {
-			dropStoredRepeats(rw, dir, &ss[i], m.Sessions[ss[i].Harness+":"+ss[i].ID], seenMsgs)
+			var from *FileState
+			if known {
+				from = &of
+			}
+			dropStoredRepeats(rw, dir, &ss[i], m.Sessions[ss[i].Harness+":"+ss[i].ID], seenMsgs, m.Files, harness, from)
 		}
 		// Kept for the sidecars below, after redaction so a pair cannot carry a
 		// credential the records do not.
