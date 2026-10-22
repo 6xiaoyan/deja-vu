@@ -7,12 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-10-22
+
+Big stores build and search for less. A cold build peaks at half the memory
+it did (4.7 GB instead of 9.4 GB on 40,000 sessions, 2.4 GB instead of 4.0 GB
+on a 12,000-session Codex store), redacts with 17x less CPU and writes a
+quarter of the scratch data. The slowest searches answer in under 200 ms in
+process instead of up to 800, and a search over many copies or look-alike
+sessions is no longer quadratic, a slowdown 0.23.0 made worse. A pass and a
+rebuild now agree on copies of one session in several projects. The index is
+rebuilt once on upgrade.
+
 ### Changed
 
 - A question with a word the store never saw reads each word's postings once
   when it tries the word's neighbours, instead of once per neighbour: on
   19,195 sessions search p95 went from 420 to 170 ms and the slowest question
   from 740 to 200 ms, with the same answers (#5540).
+- A cold build peaks at half the memory: 4.7 GB instead of 9.4 GB on a
+  40,000-session store. The message count and the rebuild's dedupe set key on
+  a hash instead of the text, and a full build runs the collector at GOGC=25
+  unless GOGC or GOMEMLIMIT is set (#5498).
+- Redacting secrets during a build takes 17x less CPU with the same output: on
+  a 12,000-session Codex store the cold build went from 109 s to 45 s wall and
+  904 s to 285 s of CPU (#5512).
+- A cold build derives each session's row on every core instead of in the
+  write loop: 189-202 s to 157-169 s on a 40,000-session store (#5524).
+- A cold build of a store under 20,000 sessions no longer holds every
+  session's words at once to count which words go together: a 12,000-session
+  Codex store peaks at 2.4 GB instead of 4.0 GB (#5533).
+- A cold build writes a quarter of the scratch data it did, so a busy disk
+  no longer stalls it: 2.47 GB to 0.59 GB on a 12,000-session Codex store, and
+  indexing messages took 15-20 s instead of 32-35 s with the disk under other
+  load (#5526).
+- `deja index` decodes the manifest and walks the stores once: renaming 20
+  transcripts on a 40,000-session store takes 0.97 s instead of 1.5 s (#5471).
+- A pass that also sees a database store change (opencode, grok and the like)
+  reads only the sessions that store changed: one new opencode message on a
+  40,000-session store goes from 2.4 s to 1.4 s (#5476).
+- The search screen reads a page at a time. A word most of a 40,000-session
+  store holds lists its first 80 cards in about 1 s instead of 16, the list is
+  headed with every match, and the next page loads as the selection nears the
+  end (#5487).
+- MCP `recall` runs one index search where it ran two: 2.4 s to 1.3 s outside
+  any known project, 2.2 s to 1.4 s inside one, same page (#5486).
+- A session the trust policy withholds no longer takes a slot in a large
+  search's pool or counts toward its total (#5488).
 
 ### Fixed
 
@@ -60,6 +100,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   16 MB line is read in memory bounded by the message cap instead of the
   line (#5424).
 The search screen reads a page at a time. A word most of a 40,000-session store holds lists its first 80 cards in about 1 s instead of 16, the list is headed with every match, and the next page loads as the selection nears the end (#5487). MCP `recall` runs one index search where it ran two, the project's answer cut from the machine's: 2.4 s to 1.3 s outside any known project, 2.2 s to 1.4 s inside one, same page (#5486). A session the trust policy withholds no longer takes a slot in a large search's pool or counts toward its total (#5488).
+- A search over sessions that share turns but each go on past them no longer
+  compares every pair: 6,000 such sessions answer in 0.43 s instead of 5.1 s
+  (#5523).
+- A search over many unrelated sessions that open on the same turn no longer
+  compares them in pairs: 6,000 answer in 0.33 s instead of 9.7 s (#5549).
+- MCP `recall`'s `limit` says it is per ~4 KB page, and a page that ran out of
+  room before reaching `limit` says `(page full)` on its paging line, so a
+  caller knows a bigger limit won't fit more (#5511).
+- A search over many sessions holding the same turns no longer goes
+  quadratic: 2,400 identical sessions answer in 0.9 s where 0.23.0 ran past
+  15 s (#5499).
+- A transcript that lands between `deja index`'s freshness check and its pass
+  is no longer lost or doubled, and a file rewritten after its stat is read
+  again (#5503).
+- A command removed from transcripts sharing an id leaves `commands.gob` on the
+  next pass (#5477).
+- Copies of one session id in several project directories give a pass and a
+  rebuild the same command tables, facts and fixes, including a copy that takes
+  the row from another project and a deleted copy that kept turns it shared
+  (#5492, #5508, #5509, #5510).
 
 ## [0.23.0] - 2026-10-21
 
