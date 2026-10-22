@@ -3225,11 +3225,14 @@ func installTOML(path, block string, uninstall bool) (installResult, error) {
 			noteBlockAdded(path, "mcp_servers."+key)
 			next := []byte(updateTOMLMCPBlock(text, key, block))
 			a, err := writeIfChanged(path, old, next)
-			return installResult{
-				Path:   path,
-				Action: a,
-				Note:   fmt.Sprintf("updated %q, which already ran deja, instead of adding a second entry", key),
-			}, err
+			res := installResult{Path: path, Action: a}
+			// Said on the run that adopted the entry, not on every run after it
+			// (#5298). key keeps the quotes it was written with, so trim them
+			// before %q or a quoted key is quoted twice.
+			if err == nil && a != "unchanged" {
+				res.Note = fmt.Sprintf("updated %q, which already ran deja, instead of adding a second entry", strings.Trim(key, `"'`))
+			}
+			return res, err
 		}
 	}
 
