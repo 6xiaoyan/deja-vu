@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -412,6 +413,105 @@ func TestClineUninstallHonorsCLINE_DIR(t *testing.T) {
 	requireClineTestGone(t, entry, manifest, skill)
 	requireClineTestFile(t, user, "mine\n")
 	requireClineTestFile(t, sentinel, "not deja's\n")
+}
+
+// A dotfiles-style link is a layout install already accepts. Uninstall must
+// remove the files through the same link rather than refusing the root and
+// leaving Cline with a plugin whose MCP entry is gone.
+func TestClineAutoUninstallThroughASymlinkedPluginDir(t *testing.T) {
+	hermeticEnv(t)
+	t.Setenv("CLINE_MCP_SETTINGS_PATH", "")
+	mcp := sources.ClineMCPSettingsPath()
+	seed := []byte(`{"mcpServers": {"zz-mine": {"command": "my-server"}}}` + "\n")
+	if err := os.MkdirAll(filepath.Dir(mcp), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mcp, seed, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	plugins := sources.ClinePluginsDir()
+	if err := os.MkdirAll(plugins, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	realDir := filepath.Join(t.TempDir(), "dotfiles", "cline-deja")
+	userNote := filepath.Join(realDir, "notes", "todo.md")
+	otherSkill := filepath.Join(realDir, "skills", "other", "SKILL.md")
+	writeClineTestFile(t, userNote, "mine\n")
+	writeClineTestFile(t, otherSkill, "another skill\n")
+
+	dir := filepath.Join(plugins, "deja")
+	if err := os.Symlink(realDir, dir); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		t.Fatalf("symlink %s to %s: %v", dir, realDir, err)
+	}
+	_, entry, manifest, skill := clineTestPaths(t)
+
+	out, err := captureRun(t, "install", "cline-auto", "--no-index")
+	if err != nil {
+		t.Fatalf("install through %s: %v\n%s", dir, err, out)
+	}
+	for _, path := range []string{entry, manifest, skill} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("install did not write through the link: %s: %v", path, err)
+		}
+	}
+
+	out, err = captureRun(t, "uninstall", "cline-auto", "--no-index")
+	if err != nil {
+		t.Fatalf("uninstall through %s: %v\n%s", dir, err, out)
+	}
+	if strings.Contains(out, "refused") {
+		t.Errorf("uninstall through a plugin link reported a refusal:\n%s", out)
+	}
+	requireClineTestGone(t, entry, manifest, skill)
+	requireClineTestFile(t, userNote, "mine\n")
+	requireClineTestFile(t, otherSkill, "another skill\n")
+
+	linkInfo, err := os.Lstat(dir)
+	if err != nil {
+		t.Fatalf("plugin link disappeared: %v", err)
+	}
+	if linkInfo.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("plugin path is no longer a symlink: %v", linkInfo.Mode())
+	}
+	target, err := os.Readlink(dir)
+	if err != nil {
+		t.Fatalf("read plugin link: %v", err)
+	}
+	if filepath.Clean(target) != filepath.Clean(realDir) {
+		t.Errorf("plugin link points at %s, want %s", target, realDir)
+	}
+
+	b, err := os.ReadFile(mcp)
+	if err != nil {
+		t.Fatalf("read %s: %v", mcp, err)
+	}
+	var root struct {
+		MCPServers map[string]json.RawMessage `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(b, &root); err != nil {
+		t.Fatalf("settings %s: %v\n%s", mcp, err, b)
+	}
+	if _, ok := root.MCPServers["zz-mine"]; !ok {
+		t.Errorf("uninstall removed the reader's own MCP server:\n%s", b)
+	}
+	if _, ok := root.MCPServers["deja"]; ok {
+		t.Errorf("uninstall left deja's MCP entry:\n%s", b)
+	}
+
+	if out, err := captureRun(t, "uninstall", "cline-auto", "--no-index"); err != nil {
+		t.Fatalf("second uninstall through %s: %v\n%s", dir, err, out)
+	} else if strings.Contains(out, "refused") {
+		t.Errorf("second uninstall through a plugin link reported a refusal:\n%s", out)
+	}
+	requireClineTestFile(t, userNote, "mine\n")
+	requireClineTestFile(t, otherSkill, "another skill\n")
+	if _, err := os.Lstat(dir); err != nil {
+		t.Errorf("plugin link disappeared after the second uninstall: %v", err)
+	}
 }
 
 // The install run's in-memory record is gone by the time a later process
