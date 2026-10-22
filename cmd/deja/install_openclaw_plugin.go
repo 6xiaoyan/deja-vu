@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -316,7 +317,30 @@ func openclawLoadPathsJSONC(text, dir string, on bool, kept, loadKeys, pluginKey
 		}
 		return text[:last+1] + ", " + string(elem) + text[last+1:], nil
 	}
-	// The strings at the list's own level that name dir, last first so the
+	next, err := jsoncCutListStrings(text, *at, func(s string) bool { return openclawSamePath(s, dir) })
+	if err != nil {
+		return "", fmt.Errorf("plugins.load.paths %w", err)
+	}
+	return next, nil
+}
+
+// jsoncCutListStrings takes the strings match picks out of the list at at
+// (from its '[' to one past its ']') as text: the other elements keep their
+// comments and commas. Its error names no list: the caller says which.
+// A list left empty stays as `[]`; dropping the key is
+// the caller's call.
+func jsoncCutListStrings(text string, at [2]int, match func(string) bool) (string, error) {
+	blank := stripJSONComments(text)
+	// The last thing in the list that is not space or a comment.
+	prevSig := func(i int) int {
+		for i--; i > at[0]; i-- {
+			if c := blank[i]; c != ' ' && c != '\t' && c != '\n' && c != '\r' {
+				break
+			}
+		}
+		return i
+	}
+	// The strings at the list's own level that match, last first so the
 	// offsets of the ones before stay good.
 	var hits [][2]int
 	depth := 0
@@ -329,10 +353,10 @@ func openclawLoadPathsJSONC(text, dir string, on bool, kept, loadKeys, pluginKey
 		case '"':
 			end := zedStringEnd(text, i)
 			if end < 0 {
-				return "", fmt.Errorf("plugins.load.paths has an open string")
+				return "", errors.New("has an open string")
 			}
 			var s string
-			if depth == 0 && json.Unmarshal([]byte(text[i:end]), &s) == nil && openclawSamePath(s, dir) {
+			if depth == 0 && json.Unmarshal([]byte(text[i:end]), &s) == nil && match(s) {
 				hits = append(hits, [2]int{i, end})
 			}
 			i = end - 1
