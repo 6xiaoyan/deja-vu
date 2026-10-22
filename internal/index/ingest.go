@@ -2720,50 +2720,32 @@ func signalLine(l string) bool {
 	return false
 }
 
-// eachIndexKey calls fn once per distinct token a message earns. Both the
-// in-memory incremental path and the spilling full build go through it, so
-// neither can drift from the other on what a message indexes to.
-// eachIndexKey calls fn once per distinct key a record contributes. The keys
+// eachIndexKey calls fn once per distinct key a record contributes. Both the
+// in-memory incremental path and the spilling full build key through a keyer,
+// so neither can drift from the other on what a message indexes to. The keys
 // are streamed rather than collected: a CJK message produces a bigram per rune
 // pair, and building the slice only to walk it once cost a third of the keying
 // time on a Han corpus (#492).
 func eachIndexKey(text string, when time.Time, fn func(tok string)) {
-	indexKeysRepeating(text, when, dedupe(fn))
-}
-
-// indexKeysRepeating is eachIndexKey without the dedupe, for a caller that
-// already sees each key through a map of its own: the spill workers (#5526).
-func indexKeysRepeating(text string, when time.Time, emit func(tok string)) {
-	textKeys(text, emit)
-	for _, tok := range dateTokens(when) {
-		emit(tok)
-	}
-}
-
-// textKeys emits every key the text contributes, repeats included; the callers
-// above put one dedupe in front of it rather than one per source.
-func textKeys(text string, emit func(tok string)) {
-	for _, tok := range tokens(text) {
-		emit("t" + tok)
-	}
-	for _, part := range identifierParts(text) {
-		emit("t" + part)
-	}
-	cjkIndexKeys(text, emit)
-}
-
-// dedupe wraps fn so it sees each key once. The three key sources overlap —
-// a word is a token and can be an identifier part as well — and a posting list
-// must not hold the same offset twice.
-func dedupe(fn func(tok string)) func(tok string) {
+	var k keyer
+	// The three key sources overlap — a word is a token and can be an
+	// identifier part as well — and a posting list must not hold the same
+	// offset twice.
 	seen := make(map[string]bool, 64)
-	return func(tok string) {
-		if seen[tok] {
+	k.keys(text, when, func(b []byte) {
+		if seen[string(b)] {
 			return
 		}
+		tok := string(b)
 		seen[tok] = true
 		fn(tok)
-	}
+	})
+}
+
+// textKeys emits every key the text contributes, repeats included.
+func textKeys(text string, emit func(tok string)) {
+	var k keyer
+	k.textKeys(text, func(b []byte) { emit(string(b)) })
 }
 
 func addIndexKeys(buckets bucketPostings, text string, off int64, sid uint32, when time.Time, tool bool) {

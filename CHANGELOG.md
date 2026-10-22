@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A cold build keys messages without allocating a string per word, so the
+  indexing phase takes half the CPU. On a 12,000-session Codex store it drops
+  from 9.3 s to 4.2 s and the whole build from 273 to 215 CPU-seconds (#5567).
+
 ### Fixed
 
 - An `apply_patch` that renames a file (`*** Move to:`) records its hunks

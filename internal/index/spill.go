@@ -133,11 +133,12 @@ func (s *spiller) run(feed func(push func(tokenJob)) error) error {
 					}
 				}
 			}
+			var k keyer
+			var job tokenJob
+			add := func(tok []byte) { g.add(tok, job.offset, job.sid, job.tool) }
 			for batch := range jobs {
-				for _, job := range batch {
-					indexKeysRepeating(job.text, job.when, func(tok string) {
-						g.add(tok, job.offset, job.sid, job.tool)
-					})
+				for _, job = range batch {
+					k.keys(job.text, job.when, add)
 					// A batch of CJK text is mostly distinct bigrams: held
 					// whole, it would cost far more than the spill it saves.
 					if g.held >= spillGroupBytes {
@@ -311,12 +312,16 @@ func newSpillGroups() *spillGroups {
 // add takes a message's keys repeats and all: a key's postings are gathered
 // one message at a time, so a repeat is a posting at the offset it already
 // ends on. That is the dedupe eachIndexKey does with a map per message.
-func (g *spillGroups) add(tok string, off int64, sid uint32, tool bool) {
-	i, ok := g.idx[tok]
+//
+// The key is the keyer's buffer: it is copied only when the batch first sees
+// it, and looking it up converts nothing.
+func (g *spillGroups) add(key []byte, off int64, sid uint32, tool bool) {
+	i, ok := g.idx[string(key)]
 	if ok && g.groups[i].last == uint64(off) {
 		return
 	}
 	if !ok {
+		tok := string(key)
 		i = int32(len(g.idx))
 		g.idx[tok] = i
 		if int(i) == len(g.groups) {

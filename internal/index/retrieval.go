@@ -5345,46 +5345,22 @@ func tokenHits(s string, want map[string]bool) map[string]bool {
 	return hit
 }
 
+// tokens is the distinct words of s, longest first, as the query side and the
+// sidecars read them. eachWord cuts them, the same walk the index keys with.
 func tokens(s string) []string {
-	// Fold NFD to NFC so an accented word keys the same whether it was typed or
-	// stored decomposed. A combining mark is category Mn, not a letter, so the
-	// tokenizer below would otherwise split "café" (NFD) into "cafe" and drop
-	// the accent, keying it apart from the precomposed "café" (#1098). Both the
-	// stored text (indexKeys) and the query (queryKeys) pass through here, so
-	// the fold is symmetric and the two sides always meet on one key.
-	s = nfcfold.Compose(s)
 	seen := map[string]bool{}
 	var out []string
-	var b strings.Builder
-	flush := func() {
-		if b.Len() >= 2 {
-			t := b.String()
-			if !seen[t] {
-				seen[t] = true
-				out = append(out, t)
-			}
+	var buf [1 + tokenHitCap]byte
+	eachWord(s, &buf, func(b []byte) {
+		// A map lookup keyed by a converted byte slice does not allocate, so
+		// only a word not seen yet is copied.
+		if seen[string(b[1:])] {
+			return
 		}
-		b.Reset()
-	}
-	for _, r := range query.Lower(s) {
-		// A combining mark continues the word it sits on. Latin NFD is already
-		// composed away above, but Arabic harakat, Hebrew niqqud, Thai vowel
-		// signs and the Indic matras have no precomposed form, so the mark
-		// ended the token: كَتَبَ was indexed as three one-letter tokens and
-		// हिन्दी as two, and the words themselves were not in the index at all
-		// (#1941). A mark cannot start a token, so a stray one still
-		// separates.
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' ||
-			(b.Len() > 0 && isMark(r)) {
-			b.WriteRune(r)
-			if b.Len() > 64 {
-				flush()
-			}
-		} else {
-			flush()
-		}
-	}
-	flush()
+		t := string(b[1:])
+		seen[t] = true
+		out = append(out, t)
+	})
 	sort.Slice(out, func(i, j int) bool { return len(out[i]) > len(out[j]) })
 	return out
 }
@@ -5406,63 +5382,17 @@ func indexKeys(s string) []string {
 	return out
 }
 
-// identifierParts emits the lowered inner words of compound identifiers so
-// `deja "user profile"` finds getUserProfile and refresh_token_rotation.
-// It walks the original-cased text: case humps are gone after lowering.
-// Only words of 6+ runes with a real boundary produce parts, and only parts
-// of 3+ runes are kept — short fragments ride the substring tier instead.
+// identifierParts is what keyer.identifierParts emits, as words.
 func identifierParts(s string) []string {
 	var out []string
-	var word []rune
-	flushWord := func() {
-		if len(word) >= 6 {
-			splitCompound(word, &out)
-		}
-		word = word[:0]
-	}
-	for _, r := range s {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' {
-			word = append(word, r)
-			if len(word) > 64 {
-				flushWord()
-			}
-			continue
-		}
-		flushWord()
-	}
-	flushWord()
+	var k keyer
+	k.identifierParts(s, func(b []byte) { out = append(out, string(b[1:])) })
 	return out
 }
 
 func splitCompound(word []rune, out *[]string) {
-	start := 0
-	boundaries := 0
-	emit := func(end int) {
-		if end-start >= 3 {
-			*out = append(*out, query.Lower(string(word[start:end])))
-		}
-		start = end
-	}
-	for i := 1; i < len(word); i++ {
-		c, p := word[i], word[i-1]
-		switch {
-		case c == '_' || c == '-':
-			emit(i)
-			start = i + 1
-			boundaries++
-		case unicode.IsUpper(c) && (unicode.IsLower(p) || unicode.IsDigit(p)):
-			// getUser | getUserById: hump boundary
-			emit(i)
-			boundaries++
-		case unicode.IsLower(c) && unicode.IsUpper(p) && i-1 > start:
-			// JSONData -> JSON | Data: break before the last upper
-			emit(i - 1)
-			boundaries++
-		}
-	}
-	if boundaries > 0 {
-		emit(len(word))
-	}
+	var k keyer
+	k.splitCompound(word, func(b []byte) { *out = append(*out, string(b[1:])) })
 }
 
 func retrievalKeys(keys []string) []string {
