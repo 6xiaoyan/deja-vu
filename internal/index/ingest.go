@@ -1033,6 +1033,7 @@ func rebuildWithTombstones(dir string, harness string, scope string, files map[s
 		ExportWatermarks: imported.watermarks, ExportBoundary: imported.boundary, ImportedRecords: imported.dedupe,
 		Compactions:        compactions,
 		ExcludeFingerprint: sources.ExclusionFingerprint(),
+		AliasFingerprint:   sources.ProjectAliasFingerprint(),
 		ToolFingerprint:    mergedToolFingerprint(priorToolFingerprint(dir))}
 	recPath := filepath.Join(tmp, "records.bin")
 	rf, err := createLog(recPath)
@@ -2372,6 +2373,7 @@ func writeSessionsWithSync(tmp, dir string, ss []model.Session, files map[string
 		ExportWatermarks: imp.watermarks, ExportBoundary: imp.boundary, ImportedRecords: imp.dedupe,
 		Compactions:        imp.compactions,
 		ExcludeFingerprint: sources.ExclusionFingerprint(),
+		AliasFingerprint:   sources.ProjectAliasFingerprint(),
 		ToolFingerprint:    mergedToolFingerprint(priorToolFingerprint(dir)),
 		PartialOf:          imp.partialOf}
 	recPath := filepath.Join(tmp, "records.bin")
@@ -5671,6 +5673,7 @@ func updateIndexPass(dir, harness, scope string, files map[string]FileState, for
 		// those patterns, so claiming today's set would be a lie the reader
 		// cannot check.
 		ExcludeFingerprint: old.ExcludeFingerprint,
+		AliasFingerprint:   old.AliasFingerprint,
 		// What the index on disk recorded: old is that manifest, or what the
 		// followed renames wrote of it.
 		ToolFingerprint: mergedToolFingerprint(old.ToolFingerprint),
