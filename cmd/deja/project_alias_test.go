@@ -41,9 +41,8 @@ func aliasedCheckouts(t *testing.T, alias bool) string {
 		}
 	}
 	line := func(sid, cwd, role, text string) string {
-		b, _ := json.Marshal(map[string]any{"type": role, "sessionId": sid, "cwd": cwd, "timestamp": "2026-09-10T10:00:00Z",
-			"message": map[string]any{"role": role, "content": text}})
-		return string(b)
+		return string(mustMarshal(t, map[string]any{"type": role, "sessionId": sid, "cwd": cwd, "timestamp": "2026-09-10T10:00:00Z",
+			"message": map[string]any{"role": role, "content": text}}))
 	}
 	writeClaudeFixture(t, filepath.Join(root, claudeFolderFor(a), "dana.jsonl"), "dana", []string{
 		line("dana", a, "user", "who owns the bulk import now that Theo is gone"),
@@ -134,10 +133,10 @@ func TestPromptHookRecallsAcrossAliasedCheckouts(t *testing.T) {
 
 // aliasFile writes the alias file naming the two trees aliasedCheckouts made
 // as one project, after the index was built.
-func aliasFile(t *testing.T, b string) (work, a string) {
+func aliasFile(t *testing.T, b string) string {
 	t.Helper()
-	work = filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(b))))
-	a = filepath.Join(work, "mono", "svc", "ledgerd")
+	work := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(b))))
+	a := filepath.Join(work, "mono", "svc", "ledgerd")
 	body := fmt.Sprintf("%s = mono\n%s = mono\n", filepath.Join(work, "mono"), filepath.Join(work, "trees"))
 	if err := os.MkdirAll(filepath.Dir(sources.ProjectAliasPath()), 0o755); err != nil {
 		t.Fatal(err)
@@ -145,7 +144,7 @@ func aliasFile(t *testing.T, b string) (work, a string) {
 	if err := os.WriteFile(sources.ProjectAliasPath(), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return work, a
+	return a
 }
 
 func promptHook(t *testing.T, cwd, session string) string {
@@ -166,7 +165,7 @@ func promptHook(t *testing.T, cwd, session string) string {
 // of recall there (#5373).
 func TestHookInACheckoutStillRecallsItsSessionsIndexedBeforeTheAlias(t *testing.T) {
 	b := aliasedCheckouts(t, false)
-	_, a := aliasFile(t, b)
+	a := aliasFile(t, b)
 	if out := promptHook(t, a, "s1"); !strings.Contains(out, "Dana") {
 		t.Fatalf("after writing the alias file the checkout lost its own sessions:\n%s", out)
 	}
@@ -203,14 +202,14 @@ func TestIndexSaysAnAliasEditNeedsARebuild(t *testing.T) {
 		t.Errorf("index said nothing about the alias edit:\n%s", out)
 	}
 	// Not started: the session is still under its old name.
-	if out := promptHook(t, b, "s1"); strings.Contains(out, "Dana") {
-		t.Errorf("the index applied the alias without a rebuild:\n%s", out)
+	if hooked := promptHook(t, b, "s1"); strings.Contains(hooked, "Dana") {
+		t.Errorf("the index applied the alias without a rebuild:\n%s", hooked)
 	}
 	doc, _ := captureRun(t, "doctor")
 	if !strings.Contains(doc, "projects") || !strings.Contains(doc, "sessions already indexed keep their old names") {
 		t.Errorf("doctor said nothing about the alias edit:\n%s", doc)
 	}
-	if _, err := captureRunStderr(t, "index", "--rebuild"); err != nil {
+	if _, err = captureRunStderr(t, "index", "--rebuild"); err != nil {
 		t.Fatal(err)
 	}
 	out, err = captureRunStderr(t, "index")
