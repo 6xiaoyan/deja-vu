@@ -3116,11 +3116,19 @@ func tomlHeadersClose(text string) error {
 // (`mcp_servers.mine.command = …`) is a table a header may extend.
 func tomlInlineKey(text, header string) error {
 	want := tomlKeyPath(strings.Trim(header, "[]"))
+	wantArray := strings.HasPrefix(header, "[[")
 	table := []string(nil)
 	for i, line := range tomlCodeLines(text) {
 		code := tomlCode(line)
 		if strings.HasPrefix(code, "[") && strings.HasSuffix(code, "]") {
 			table = tomlKeyPath(strings.Trim(code, "[]"))
+			// An array of tables is not the table deja adds: declaring a key as
+			// both is the same double definition, so `[[mcp_servers.deja]]` is
+			// refused too (#5297). Only when deja adds a plain table; its own
+			// `[[hooks]]` is an array by design and the reader's entries stay legal.
+			if strings.HasPrefix(code, "[[") && !wantArray && tomlPathHasPrefix(want, table) {
+				return fmt.Errorf("line %d declares %s as an array of tables, and the %s table deja adds would define it twice — write it as %s tables or add deja by hand", i+1, strings.Join(table, "."), header, header)
+			}
 			continue
 		}
 		k, _, ok := strings.Cut(code, "=")
