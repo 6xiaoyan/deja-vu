@@ -2,6 +2,7 @@ package sources
 
 import (
 	"encoding/json"
+	"maps"
 	"strings"
 	"time"
 
@@ -18,6 +19,10 @@ import (
 // {filePath, oldString, newString}, multi_replace_string_in_file
 // {replacements: [{filePath, oldString, newString}]}, create_file {filePath,
 // content}, and apply_patch {input} in codex's patch format.
+// insert_edit_into_file {explanation, filePath, code} sends the changed
+// stretches with "...existing code..." standing for the rest
+// (src/extension/tools/node/insertEditTool.tsx IEditFileParams), so it has a
+// written side and no replaced one.
 var copilotChatDialect = toolDialect{
 	pathKey:   "filePath",
 	pathTools: map[string]bool{"replace_string_in_file": true, "create_file": true},
@@ -42,6 +47,17 @@ func copilotChatCallChange(name string, args map[string]any) copilotChatChange {
 	if name == "apply_patch" {
 		if in, _ := args["input"].(string); in != "" {
 			c.files, c.spans, c.wrote = applyPatch(in, func(p string) string { return chatResourcePath(p) })
+		}
+		return c
+	}
+	if name == "insert_edit_into_file" {
+		p, _ := args["filePath"].(string)
+		code, _ := args["code"].(string)
+		if p = chatResourcePath(p); p != "" && !strings.ContainsAny(p, "\n\r") {
+			c.files = []string{p}
+			if rec := WroteRecord(p, withoutElisions(code)); rec != "" {
+				c.wrote = []string{rec}
+			}
 		}
 		return c
 	}
@@ -73,9 +89,7 @@ func copilotChatEditCall(name string, args map[string]any) map[string]any {
 	if p, _ := args["filePath"].(string); p != "" {
 		if plain := chatResourcePath(p); plain != p {
 			in = make(map[string]any, len(args))
-			for k, v := range args {
-				in[k] = v
-			}
+			maps.Copy(in, args)
 			in["filePath"] = plain
 		}
 	}

@@ -9,10 +9,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A cold build keys messages without allocating a string per word, so the
+  indexing phase takes half the CPU. On a 12,000-session Codex store it drops
+  from 9.3 s to 4.2 s and the whole build from 273 to 215 CPU-seconds (#5567).
+### Added
+
+- `~/.config/deja/projects` names a directory tree as one project, one `<path> = <name>` per line. Every checkout and worktree under a listed path is indexed under that name, and the hooks and recall standing anywhere in it scope to all of them. Editing the file renames nothing already indexed: `deja index` and `deja doctor` say a rebuild is due, `deja index --rebuild` renames the sessions whose transcripts are still on disk, and sessions indexed before the file existed still match from their own checkout until then. The exclude file wins over an alias, so a repository excluded by its own name stays out. From @Maweill (#5097, #5373).
+- `deja search --sort date` lists the newest match first, in the text and in
+  `--json`, and `^s` in the search screen turns the list newest first under
+  day headings and back. On a common word the page is the newest of the whole
+  match, not the newest of the best-ranked thousand (#5577).
+- A cold build reads each transcript line once instead of handing it to six
+  readers that each decoded it again, and checks tool output for known errors
+  in one pass per line. On 40,000 sessions it takes 60 s instead of 87 s and
+  353 CPU-seconds instead of 551 (#5586).
+
+### Fixed
+
+- `deja fix`, `deja friction` and the hook at a failed command now know the
+  errors a package install hits behind a mirror or a proxy: pip's "No matching
+  distribution found", an HTTP 403 or 401 from an index, an unresolvable host,
+  an untrusted certificate, a failed docker build step and npm's error codes.
+  `pip3`, `pip config`, conda and apt installs are kept as remedies, so the
+  install that worked against the mirror is what `deja fix` names (#5599).
+- A first build large enough to answer early no longer forgets the malformed
+  lines, unreadable files and rollouts waiting for zstd it found, so doctor
+  still reports them (#5110).
+- An `apply_patch` that renames a file (`*** Move to:`) records its hunks
+  under the new name, so `deja blame` and `deja restore` find them there.
+  Codex, opencode, Copilot CLI, OpenClaw, pi, Cline, Roo and Amp filed them
+  under the old path (#595).
+- `deja blame` attributes lines written by CodeWhale's `write_file` and
+  `fim_edit` (the latter read from its result), and `deja blame` and
+  `deja restore` see the symbol a Crush `lsp_replace_symbol` replaced (from
+  the result's metadata) and the lines a Reasonix `delete_symbol` cut (from
+  the diff it returns). Each kept only the path, or only the written side
+  (#595).
+- `deja blame` attributes a line a Copilot agent wrote with
+  `insert_edit_into_file`. The transcript reader kept only the file's path
+  (#595).
+- A transcript with nothing to index, such as one tool result that was only a
+  `<deja-recall>` block, no longer gets an empty session in `deja last` from
+  an incremental pass. A rebuild never listed it (#5563).
+- The `deja_recall` tool in the dsh, opencode, OpenClaw and Hermes plugins
+  answers with the MCP recall page, about 4 KB, and takes an `offset` for the
+  next one. dsh and opencode handed the model `search --json`: 222,536
+  characters for five hits on a test store. `deja recall` takes `--offset`
+  (#5568).
+- The skills' shell fallback is `deja recall`, not `deja --framed search
+  --json`, which ran to 222,546 bytes for one query on the same store against
+  4,097 (#5578). The Devin plugin's copy of the skill had drifted and is
+  current again.
+- A recall page that names a session matched more often than it can quote
+  says to call recall with that id, not recall_context, which the OpenClaw and
+  Hermes plugins do not have. Recall opens any id recall_context would,
+  including a Devin subagent's (#5579).
+
+## [0.23.1] - 2026-10-22
+
+Big stores build and search for less. A cold build peaks at half the memory
+it did (4.7 GB instead of 9.4 GB on 40,000 sessions, 2.4 GB instead of 4.0 GB
+on a 12,000-session Codex store), redacts with 17x less CPU and writes a
+quarter of the scratch data. The slowest searches answer in under 200 ms in
+process instead of up to 800, and a search over many copies or look-alike
+sessions is no longer quadratic, a slowdown 0.23.0 made worse. A pass and a
+rebuild now agree on copies of one session in several projects. The index is
+rebuilt once on upgrade.
+
+### Changed
+
 - A question with a word the store never saw reads each word's postings once
   when it tries the word's neighbours, instead of once per neighbour: on
   19,195 sessions search p95 went from 420 to 170 ms and the slowest question
   from 740 to 200 ms, with the same answers (#5540).
+- A cold build peaks at half the memory: 4.7 GB instead of 9.4 GB on a
+  40,000-session store. The message count and the rebuild's dedupe set key on
+  a hash instead of the text, and a full build runs the collector at GOGC=25
+  unless GOGC or GOMEMLIMIT is set (#5498).
+- Redacting secrets during a build takes 17x less CPU with the same output: on
+  a 12,000-session Codex store the cold build went from 109 s to 45 s wall and
+  904 s to 285 s of CPU (#5512).
+- A cold build derives each session's row on every core instead of in the
+  write loop: 189-202 s to 157-169 s on a 40,000-session store (#5524).
+- A cold build of a store under 20,000 sessions no longer holds every
+  session's words at once to count which words go together: a 12,000-session
+  Codex store peaks at 2.4 GB instead of 4.0 GB (#5533).
+- A cold build writes a quarter of the scratch data it did, so a busy disk
+  no longer stalls it: 2.47 GB to 0.59 GB on a 12,000-session Codex store, and
+  indexing messages took 15-20 s instead of 32-35 s with the disk under other
+  load (#5526).
+- `deja index` decodes the manifest and walks the stores once: renaming 20
+  transcripts on a 40,000-session store takes 0.97 s instead of 1.5 s (#5471).
+- A pass that also sees a database store change (opencode, grok and the like)
+  reads only the sessions that store changed: one new opencode message on a
+  40,000-session store goes from 2.4 s to 1.4 s (#5476).
+- The search screen reads a page at a time. A word most of a 40,000-session
+  store holds lists its first 80 cards in about 1 s instead of 16, the list is
+  headed with every match, and the next page loads as the selection nears the
+  end (#5487).
+- MCP `recall` runs one index search where it ran two: 2.4 s to 1.3 s outside
+  any known project, 2.2 s to 1.4 s inside one, same page (#5486).
+- A session the trust policy withholds no longer takes a slot in a large
+  search's pool or counts toward its total (#5488).
 
 ### Fixed
 
@@ -60,6 +158,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   16 MB line is read in memory bounded by the message cap instead of the
   line (#5424).
 The search screen reads a page at a time. A word most of a 40,000-session store holds lists its first 80 cards in about 1 s instead of 16, the list is headed with every match, and the next page loads as the selection nears the end (#5487). MCP `recall` runs one index search where it ran two, the project's answer cut from the machine's: 2.4 s to 1.3 s outside any known project, 2.2 s to 1.4 s inside one, same page (#5486). A session the trust policy withholds no longer takes a slot in a large search's pool or counts toward its total (#5488).
+- A search over sessions that share turns but each go on past them no longer
+  compares every pair: 6,000 such sessions answer in 0.43 s instead of 5.1 s
+  (#5523).
+- A search over many unrelated sessions that open on the same turn no longer
+  compares them in pairs: 6,000 answer in 0.33 s instead of 9.7 s (#5549).
+- MCP `recall`'s `limit` says it is per ~4 KB page, and a page that ran out of
+  room before reaching `limit` says `(page full)` on its paging line, so a
+  caller knows a bigger limit won't fit more (#5511).
+- A search over many sessions holding the same turns no longer goes
+  quadratic: 2,400 identical sessions answer in 0.9 s where 0.23.0 ran past
+  15 s (#5499).
+- A transcript that lands between `deja index`'s freshness check and its pass
+  is no longer lost or doubled, and a file rewritten after its stat is read
+  again (#5503).
+- A command removed from transcripts sharing an id leaves `commands.gob` on the
+  next pass (#5477).
+- Copies of one session id in several project directories give a pass and a
+  rebuild the same command tables, facts and fixes, including a copy that takes
+  the row from another project and a deleted copy that kept turns it shared
+  (#5492, #5508, #5509, #5510).
+- With `DEJA_EXCLUDE_HARNESSES` set, `deja stats`, `deja sources`, the empty
+  search and the first screen count project patterns and name the setting that
+  excluded each store, instead of blaming the exclude file (#5401).
+- `deja uninstall opencode` takes deja's entry out of a tui.json that has
+  comments, and uninstall keeps a comment the reader wrote on the list entry
+  before deja's, in tui.json and OpenClaw's load paths (#5313, #5557).
+- A transcript read again after a change no longer keeps an empty tool-output
+  record for a tool result that was only a `<deja-recall>` block, so it matches
+  a rebuild (#5555).
 
 ## [0.23.0] - 2026-10-21
 

@@ -75,6 +75,9 @@ type tuiApp struct {
 	sel, scroll int
 	tookMS      float64
 	widened     bool
+	byDate      bool // the search list reads newest first, not best first
+	searchRows  bool // rows holds a search's hits, not the home list
+	rowsByDate  bool // and they were read newest first
 	searching   bool
 	seq         int
 	latest      atomic.Int64 // seq of the newest search, read off the loop
@@ -199,11 +202,9 @@ func (a *tuiApp) post(f func()) {
 // spawn runs f off the event loop and counts it, so a test can wait for the
 // screen's background reads and writes to end before its temp dirs go.
 func (a *tuiApp) spawn(f func()) {
-	a.bg.Add(1)
-	go func() {
-		defer a.bg.Done()
+	a.bg.Go(func() {
 		f()
-	}()
+	})
 }
 
 func (a *tuiApp) run() {
@@ -350,7 +351,7 @@ func (a *tuiApp) loadHome() {
 		a.agentsHere = tuiAgentCounts(here)
 	}
 	var ss []model.Session
-	total := 0
+	var total int
 	switch a.scope {
 	case scopeKept:
 		ss, total = a.kept, len(a.kept)
@@ -376,6 +377,7 @@ func (a *tuiApp) setRows(ss []model.Session, hits []search.Hit, total int) {
 		keep = sessionKey(a.rows[a.sel].s)
 	}
 	a.listed = listed
+	a.searchRows = hits != nil
 	var rows []tuiRow
 	box := a.box()
 	add := func(s model.Session, snips []string) {
@@ -385,11 +387,22 @@ func (a *tuiApp) setRows(ss []model.Session, hits []search.Hit, total int) {
 		rows = append(rows, tuiRow{s: s, snips: snips})
 	}
 	if hits != nil {
+		strict := false
+		for _, h := range hits {
+			strict = strict || h.Strict
+		}
 		for _, h := range hits {
 			if a.scope == scopeKept && !a.keptIDs[sessionKey(h.Session)] {
 				continue
 			}
+			n := len(rows)
 			add(h.Session, tuiSnippets(h))
+			if len(rows) > n {
+				rows[n].partial = strict && !h.Strict
+			}
+		}
+		if a.rowsByDate {
+			a.daySections(rows)
 		}
 	} else {
 		for _, s := range ss {
@@ -402,16 +415,7 @@ func (a *tuiApp) setRows(ss []model.Session, hits []search.Hit, total int) {
 					behind = append(behind, b)
 				}
 			}
-			now := time.Now()
-			if a.clock != nil {
-				now = a.clock()
-			}
-			last := ""
-			for i := range rows {
-				if g := dayGroup(rows[i].s.Updated, now); g != last {
-					rows[i].section, last = g, g
-				}
-			}
+			a.daySections(rows)
 			rows = withBehind(behind, rows)
 		}
 	}
@@ -431,6 +435,45 @@ func (a *tuiApp) setRows(ss []model.Session, hits []search.Hit, total int) {
 			break
 		}
 		a.want(r.s)
+	}
+}
+
+// daySections heads each run of cards from the same day group, for a list
+// that reads newest first.
+func (a *tuiApp) daySections(rows []tuiRow) {
+	now := time.Now()
+	if a.clock != nil {
+		now = a.clock()
+	}
+	last := ""
+	for i := range rows {
+		g := dayGroup(rows[i].s.Updated, now)
+		// A relevance answer lists the sessions holding every word first,
+		// then the rest, each newest first: the rest are headed apart.
+		if rows[i].partial {
+			g += " · some of the words"
+		}
+		if g != last {
+			rows[i].section, last = g, g
+		}
+	}
+}
+
+// toggleSort switches the search list between best first and newest first.
+// The newest are read from the whole match, a page at a time like the
+// ranking, not sorted out of the page already listed (#5577).
+func (a *tuiApp) toggleSort() {
+	a.byDate = !a.byDate
+	// A search on screen says its order in its label; the home list is
+	// newest first either way, so there the order is said for the next search.
+	if a.box().text != "" {
+		a.startSearch()
+		return
+	}
+	if a.byDate {
+		a.say("Searches list newest first", true)
+	} else {
+		a.say("Searches list best match first", true)
 	}
 }
 
@@ -468,6 +511,10 @@ func (a *tuiApp) searchPage(limit int, next bool) {
 	seq, q, scope, box := a.seq, string(a.query), a.scope, a.box()
 	o := box.options(a.scopeProjects())
 	o.Limit = limit
+	byDate := a.byDate
+	if byDate {
+		o.Sort = search.SortDate
+	}
 	if next && a.widened {
 		o.Projects = nil
 	}
@@ -517,6 +564,7 @@ func (a *tuiApp) searchPage(limit int, next bool) {
 			}
 			a.hits, a.asked, a.matched = hits, limit, matched
 			a.widened = widened
+			a.rowsByDate = byDate
 			refresh := a.listed == num(a.scope)+"\x00"+q
 			a.setRows(nil, hits, len(hits))
 			if len(a.rows) == 0 && scope != scopeKept {

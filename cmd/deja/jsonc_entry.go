@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -335,9 +336,9 @@ func closeEmptied(text string, keys []string) string {
 func nestedBlocks(keys []string, id, entry, indent string) string {
 	entry = strings.ReplaceAll(entry, "\n    ", "\n"+indent+strings.Repeat("  ", len(keys)))
 	body := fmt.Sprintf("%q: %s", id, entry)
-	for i := len(keys) - 1; i >= 0; i-- {
+	for i, key := range slices.Backward(keys) {
 		inner := indent + strings.Repeat("  ", i+1)
-		body = fmt.Sprintf("%q: {\n%s%s\n%s}", keys[i], inner, body, indent+strings.Repeat("  ", i))
+		body = fmt.Sprintf("%q: {\n%s%s\n%s}", key, inner, body, indent+strings.Repeat("  ", i))
 	}
 	return "\n" + indent + body
 }
@@ -587,7 +588,11 @@ func jsoncRemoveKey(text, blockKey, key string, dropFrom int) (string, error) {
 	if open < 0 {
 		return text, nil
 	}
-	keys := splitBlockKey(blockKey)
+	// An empty blockKey is the top-level object, for a key that lives there.
+	var keys []string
+	if blockKey != "" {
+		keys = splitBlockKey(blockKey)
+	}
 	if dropFrom < len(keys) {
 		chain, have := walkJSONCKeys(text, open, keys[:dropFrom+1])
 		if chain == nil || have <= dropFrom {
@@ -598,6 +603,13 @@ func jsoncRemoveKey(text, blockKey, key string, dropFrom int) (string, error) {
 		return closeEmptied(cutEntry(text, zedEntrySpan(text, chain)), keys), nil
 	}
 	block, have := walkJSONCKeys(text, open, keys)
+	if len(keys) == 0 {
+		end := zedObjectEnd(text, open)
+		if end < 0 {
+			return text, nil
+		}
+		block = &zedSpan{keyStart: open, valueOpen: open, valueEnd: end}
+	}
 	if block == nil || have < len(keys) {
 		return text, nil
 	}

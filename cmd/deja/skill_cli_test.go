@@ -19,14 +19,19 @@ func TestWarmupWritesTheCLISkill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("warmup left no CLI skill: %v", err)
 	}
-	for _, want := range []string{"name: deja-search", "deja --framed search --json", "deja --framed blame"} {
+	for _, want := range []string{"name: deja-search", "deja recall \"<query>\"", "deja recall --offset", "deja --framed blame"} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("the skill does not teach %q", want)
 		}
 	}
+	// search --json carries every matched message whole: 222,546 bytes for one
+	// query over five 240 KB sessions, where recall answers in 4,097 (#5578).
+	if strings.Contains(string(body), "search --json") {
+		t.Error("the CLI skill still sends an agent to search --json")
+	}
 	// The point of the second skill: it must not send an agent at MCP tools
 	// that a CLI-only machine never installed.
-	for _, line := range strings.Split(string(body), "\n") {
+	for line := range strings.SplitSeq(string(body), "\n") {
 		if strings.HasPrefix(line, "- recall") || strings.HasPrefix(line, "- how:") {
 			t.Errorf("the CLI skill names an MCP tool as a thing to call: %q", line)
 		}
@@ -40,8 +45,13 @@ func TestTheTwoSkillsPointAtEachOther(t *testing.T) {
 	if !strings.Contains(cliSkillBody, "MCP tool") {
 		t.Error("the CLI skill never mentions the MCP tool it defers to")
 	}
-	if !strings.Contains(skillBody, "deja --framed search --json") {
+	if !strings.Contains(skillBody, "deja recall \"<query>\"") {
 		t.Error("the MCP skill never names the shell path for a session without the tools")
+	}
+	// The shell path is the recall page, not search --json, which ran to
+	// hundreds of KB for one query (#5578).
+	if strings.Contains(skillBody, "search --json") {
+		t.Error("the MCP skill's shell fallback is search --json")
 	}
 }
 
@@ -162,7 +172,7 @@ func TestInstalledSkillsKeepMetadataFlat(t *testing.T) {
 			t.Fatalf("%s: no frontmatter:\n%s", name, file)
 		}
 		inMeta := false
-		for _, line := range strings.Split(strings.TrimSuffix(parts[1], "\n"), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSuffix(parts[1], "\n"), "\n") {
 			switch {
 			case line == "metadata:":
 				inMeta = true

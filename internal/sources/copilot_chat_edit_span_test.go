@@ -14,7 +14,7 @@ import (
 // arguments a JSON string, each result keyed by the call's id.
 func copilotChatRequestWithCalls(t *testing.T, calls []map[string]any, results map[string]any) map[string]any {
 	t.Helper()
-	var tc []any
+	tc := make([]any, 0, len(calls))
 	for _, c := range calls {
 		args, err := json.Marshal(c["args"])
 		if err != nil {
@@ -88,7 +88,7 @@ func TestCopilotChatReadsTheReplacedSideFromToolCallRounds(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := filepath.Join(t.TempDir(), "s.json")
-	if err := os.WriteFile(p, b, 0o644); err != nil {
+	if err = os.WriteFile(p, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got := copilotChatRecordsOf(t, p, RoleEdit)
@@ -171,5 +171,50 @@ func TestCopilotAgentTranscriptRecordsBothSidesOfAnEdit(t *testing.T) {
 	}
 	if strings.Join(files, "|") != pool {
 		t.Fatalf("files = %q", files)
+	}
+}
+
+// insert_edit_into_file {explanation, filePath, code} sends the new text with
+// "...existing code..." for the lines it kept; the transcript had its path and
+// nothing for blame to match (#595).
+func TestCopilotAgentInsertEditRecordsTheWrittenSide(t *testing.T) {
+	root := copilotChatRoot(t)
+	const pool = "/work/projA/internal/pool/pool.go"
+	const added = "deadline, cancel := context.WithTimeout(ctx, p.acquireTimeout)"
+	start := func(id string, args map[string]any) string {
+		b, err := json.Marshal(map[string]any{"type": "tool.execution_start", "timestamp": "2026-09-14T05:46:13.000Z",
+			"data": map[string]any{"toolCallId": id, "toolName": "insert_edit_into_file", "arguments": args}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	p := writeCopilotAgentTranscript(t, root, "h1", "s-insert", `{"folder":"file:///work/projA"}`, []string{
+		`{"type":"session.start","data":{"sessionId":"s-insert","startTime":"2026-09-14T05:46:01.086Z"},"timestamp":"2026-09-14T05:46:01.086Z"}`,
+		`{"type":"user.message","data":{"content":"give the pool an acquire timeout"},"timestamp":"2026-09-14T05:46:10.000Z"}`,
+		start("c1", map[string]any{"explanation": "Bound Acquire by a timeout.", "filePath": pool,
+			"code": "// ...existing code above Acquire...\nfunc (p *Pool) Acquire(ctx context.Context) (*Conn, error) {\n\t" + added + "\n// ...existing code..."}),
+		`{"type":"tool.execution_complete","data":{"toolCallId":"c1","success":true},"timestamp":"2026-09-14T05:46:14.000Z"}`,
+		start("c2", map[string]any{"explanation": "x", "filePath": pool, "code": "refused = a line the extension never wrote anywhere"}),
+		`{"type":"tool.execution_complete","data":{"toolCallId":"c2","success":false},"timestamp":"2026-09-14T05:46:15.000Z"}`,
+	})
+	ss, err := ParseCopilotChatFile(p)
+	if err != nil || len(ss) != 1 {
+		t.Fatalf("parse: %v, %d sessions", err, len(ss))
+	}
+	wrote := copilotChatRecordsOf(t, p, RoleWrote)
+	if len(wrote) != 1 {
+		t.Fatalf("wrote = %q, want the successful call's one record", wrote)
+	}
+	h, _ := HashWrittenLine(added)
+	if path, has := WroteRecordHas(wrote[0], h); !has || path != pool {
+		t.Fatalf("wrote = %q, want the added line under %s", wrote, pool)
+	}
+	elided, _ := HashWrittenLine("// ...existing code above Acquire...")
+	if _, has := WroteRecordHas(wrote[0], elided); has {
+		t.Fatalf("the elision marker was hashed as a written line: %q", wrote)
+	}
+	if got := copilotChatRecordsOf(t, p, RoleEdit); len(got) != 0 {
+		t.Fatalf("an insert edit has no replaced side, got %q", got)
 	}
 }

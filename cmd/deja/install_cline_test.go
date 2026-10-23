@@ -87,10 +87,10 @@ func TestInstallClineIsIdempotentAndRemovable(t *testing.T) {
 	if again.Action != "unchanged" {
 		t.Fatalf("reinstall rewrote the plugin: %q", again.Action)
 	}
-	if _, err := installClineAuto("/bin/deja", true); err != nil {
+	if _, err = installClineAuto("/bin/deja", true); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".cline", "plugins", "deja")); !os.IsNotExist(err) {
+	if _, err = os.Stat(filepath.Join(home, ".cline", "plugins", "deja")); !os.IsNotExist(err) {
 		t.Fatalf("plugin survived uninstall: %v", err)
 	}
 	second, err := installClineAuto("/bin/deja", true)
@@ -125,8 +125,8 @@ func TestInstallClineWritesAPackageManifest(t *testing.T) {
 			Plugins []string `json:"plugins"`
 		} `json:"cline"`
 	}
-	if err := json.Unmarshal(b, &pkg); err != nil {
-		t.Fatalf("package.json: %v\n%s", err, b)
+	if uerr := json.Unmarshal(b, &pkg); uerr != nil {
+		t.Fatalf("package.json: %v\n%s", uerr, b)
 	}
 	if pkg.Name != "deja" || len(pkg.Cline.Plugins) != 1 || pkg.Cline.Plugins[0] != "./index.js" {
 		t.Fatalf("package.json does not name the plugin entry: %s", b)
@@ -454,7 +454,7 @@ func TestClineAutoUninstallThroughASymlinkedPluginDir(t *testing.T) {
 		t.Fatalf("install through %s: %v\n%s", dir, err, out)
 	}
 	for _, path := range []string{entry, manifest, skill} {
-		if _, err := os.Stat(path); err != nil {
+		if _, err = os.Stat(path); err != nil {
 			t.Fatalf("install did not write through the link: %s: %v", path, err)
 		}
 	}
@@ -534,7 +534,7 @@ func TestClineAutoUninstallUsesThePersistedDirectoryRecord(t *testing.T) {
 	}
 	dir, entry, manifest, skill := clineTestPaths(t)
 	for _, path := range []string{entry, manifest, skill} {
-		if _, err := os.Stat(path); err != nil {
+		if _, err = os.Stat(path); err != nil {
 			t.Fatalf("install did not write %s: %v", path, err)
 		}
 	}
@@ -547,7 +547,7 @@ func TestClineAutoUninstallUsesThePersistedDirectoryRecord(t *testing.T) {
 		t.Errorf("uninstall over the persisted record reported a refusal:\n%s", out)
 	}
 	requireClineTestGone(t, entry, manifest, skill)
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+	if _, err = os.Stat(dir); !os.IsNotExist(err) {
 		t.Errorf("plugin directory survived an uninstall with a persisted record: %v", err)
 	}
 	b, err := os.ReadFile(mcp)

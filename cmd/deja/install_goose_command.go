@@ -60,7 +60,7 @@ func gooseSlashCommandsBlock(s string) string {
 // YAML serializer writes, and an entry spliced in at two spaces beside it is a
 // file no parser will read (#2724).
 func gooseListIndent(block string) (string, bool) {
-	for _, line := range strings.Split(block, "\n") {
+	for line := range strings.SplitSeq(block, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
@@ -170,28 +170,34 @@ func installGooseCommand(exe string, uninstall bool) (installResult, error) {
 		return installResult{}, err
 	}
 	recipe := gooseRecipePath()
-	if !uninstall {
+	// Written only once the config has been accepted, so a refused command leaves
+	// nothing behind: the recipe used to go first and stayed on disk with no entry
+	// pointing at it until an uninstall (#5296). The "unchanged" returns below
+	// still call it, since the recipe is refreshed even when the entry is there.
+	writeRecipe := func() error {
 		noteCreatedDirs(filepath.Dir(recipe))
-		if err := os.MkdirAll(filepath.Dir(recipe), 0o755); err != nil {
-			return installResult{}, err
+		if merr := os.MkdirAll(filepath.Dir(recipe), 0o755); merr != nil {
+			return merr
 		}
-		oldRecipe, err := readConfig(recipe)
-		if err != nil {
-			return installResult{}, err
+		oldRecipe, rerr := readConfig(recipe)
+		if rerr != nil {
+			return rerr
 		}
-		if _, err := writeIfChanged(recipe, oldRecipe, []byte(gooseRecipe(exe))); err != nil {
-			return installResult{}, err
-		}
+		_, rerr = writeIfChanged(recipe, oldRecipe, []byte(gooseRecipe(exe)))
+		return rerr
 	}
 
 	if !uninstall {
 		// Read by value: goose saves this file through serde_yaml, unquoted,
 		// and a match on deja's own text rewrote the entry and moved the key
 		// to the bottom after every save of goose's (#5193).
-		if _, err := yamlTopKeyEnd(normaliseGooseNewlines(string(old))+"\n", "slash_commands:"); err != nil {
-			return installResult{}, fmt.Errorf("%s: %w", path, err)
+		if _, yerr := yamlTopKeyEnd(normaliseGooseNewlines(string(old))+"\n", "slash_commands:"); yerr != nil {
+			return installResult{}, fmt.Errorf("%s: %w", path, yerr)
 		}
 		if _, ours := gooseSlashCommandOurs(normaliseGooseNewlines(string(old)), recipe); ours {
+			if werr := writeRecipe(); werr != nil {
+				return installResult{}, werr
+			}
 			return installResult{Path: path, Action: "unchanged"}, nil
 		}
 	}
@@ -209,6 +215,9 @@ func installGooseCommand(exe string, uninstall bool) (installResult, error) {
 		// block to the bottom. See the same guard in installGoose — the two
 		// writers were swapping their keys round on every install (#3689).
 		if strings.Contains(normaliseGooseNewlines(string(old)), entry) {
+			if werr := writeRecipe(); werr != nil {
+				return installResult{}, werr
+			}
 			return installResult{Path: path, Action: "unchanged"}, nil
 		}
 		if next != "" && !strings.HasSuffix(next, "\n") {
@@ -221,9 +230,9 @@ func installGooseCommand(exe string, uninstall bool) (installResult, error) {
 		if v := inlineYAMLValue(next, "slash_commands:"); v != "" {
 			return installResult{}, fmt.Errorf("%s: slash_commands: %s is on one line, and deja edits the block form — move it to a block and run this again", path, v)
 		}
-		at, err := yamlTopKeyEnd(next, "slash_commands:")
-		if err != nil {
-			return installResult{}, fmt.Errorf("%s: %w", path, err)
+		at, yerr := yamlTopKeyEnd(next, "slash_commands:")
+		if yerr != nil {
+			return installResult{}, fmt.Errorf("%s: %w", path, yerr)
 		}
 		if at >= 0 {
 			next = next[:at] + entry + next[at:]
@@ -231,9 +240,14 @@ func installGooseCommand(exe string, uninstall bool) (installResult, error) {
 			next += "slash_commands:\n" + entry
 		}
 	}
+	if !uninstall {
+		if werr := writeRecipe(); werr != nil {
+			return installResult{}, werr
+		}
+	}
 	noteCreatedDirs(filepath.Dir(path))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return installResult{}, err
+	if merr := os.MkdirAll(filepath.Dir(path), 0o755); merr != nil {
+		return installResult{}, merr
 	}
 	a, err := writeIfChanged(path, old, []byte(keepTrailingNewline(string(old), next)))
 	if err != nil {

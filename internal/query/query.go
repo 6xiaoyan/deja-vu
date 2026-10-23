@@ -69,6 +69,11 @@ type Options struct {
 	From  string
 	Since time.Duration
 	Limit int
+	// Sort is the order of the answer: SortDate lists the newest match first,
+	// anything else ranks by relevance. Under Window the pool is then the
+	// newest matches rather than the best-scored ones, so the page is the
+	// newest of the whole match, not the newest of its best thousand (#5577).
+	Sort string `json:"-"`
 	// Total and Capped travel from RunDetailed to Print so the JSON envelope
 	// can report how many sessions matched before the cap, not merely how many
 	// survived it. Counting the survivors measures the cap.
@@ -162,6 +167,13 @@ type Unread struct {
 	Estimated bool
 }
 
+// The orders Options.Sort takes.
+const (
+	SortRelevance = "relevance"
+	SortDate      = "date"
+)
+
+// The tiers a hit can come from, strictest first.
 const (
 	TierExact    = "exact"
 	TierClose    = "close"
@@ -179,7 +191,7 @@ const (
 
 // QueryParts separates ordinary terms from quoted phrases without changing
 // the query syntax used by callers.
-func QueryParts(q string) (terms []string, phrases []string) {
+func QueryParts(q string) (terms []string, phrases []string) { //nolint:revive // exported name used from cmd/deja and internal/index
 	start := -1
 	var plain strings.Builder
 	flushPlain := func() {
@@ -277,6 +289,8 @@ func MatchesQuery(text, q string) bool {
 	return MatchesParts(text, terms, phrases, nil)
 }
 
+// MatchesParts reports whether text holds every term (or one of its variants)
+// and every phrase.
 func MatchesParts(text string, terms, phrases []string, variants map[string][]string) bool {
 	return MatchesLowered(Lower(text), terms, phrases, variants)
 }

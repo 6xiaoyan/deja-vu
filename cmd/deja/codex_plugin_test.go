@@ -98,6 +98,7 @@ func TestBundledSkillsMatchInstaller(t *testing.T) {
 		"codex-plugin/skills/deja-history/SKILL.md",
 		"claude-plugin/skills/deja-history/SKILL.md",
 		"codebuddy-plugin/skills/deja-history/SKILL.md",
+		"devin-plugin/skills/deja-history/SKILL.md",
 		"extensions/kimi/skills/deja-history/SKILL.md",
 		"extensions/grok/skills/deja-history/SKILL.md",
 	} {
@@ -170,7 +171,7 @@ func TestCodexPluginHooks(t *testing.T) {
 	// What ships is the mode git records, not the one this checkout happens to
 	// have: a Windows checkout reports -rw-rw-rw- for every file, so reading it
 	// off the disk failed the whole matrix (#1671).
-	out, err := exec.Command("git", "ls-files", "-s", "--", script).Output()
+	out, err := exec.CommandContext(t.Context(), "git", "ls-files", "-s", "--", script).Output()
 	if err != nil {
 		t.Skipf("git is not available to read the recorded mode: %v", err)
 	}
@@ -204,7 +205,7 @@ func TestCodexPluginStandsDownForTheInstaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pattern.MatchString(string(written)) {
+	if !pattern.Match(written) {
 		t.Fatalf("the script's own pattern does not match what the installer writes: %s", written)
 	}
 }

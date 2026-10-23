@@ -58,6 +58,7 @@ the list narrows as you type.
 
 - `↑↓` picks a session, `↵` opens it at the match, `n` and `N` step through the matches, `esc` goes back. Inside a session, `/` finds a word and `]` `[` jump between the turns you asked.
 - The box takes filters: an agent with a colon (`codex:`), `today`, `yesterday`, `week`, `month`, and `in:<project>`.
+- `^s` lists the results newest first under day headings, and back to best match first. `deja search --sort date` does the same from a script.
 - `r` resumes the session in the agent that wrote it. `o` continues it in any other agent, which starts with what the session asked, decided and left open.
 - `tab` switches between this project, all projects and Deleted, the sessions their agent deleted that deja still holds; `R` puts one back.
 - `D` erases a session from its agent and from deja, after asking (`deja delete <id>` from a script).
@@ -148,8 +149,8 @@ The binary alone is a complete install for searching: index, search, `show`, `ct
 and turns on session-start recall — worth having, and optional. On a binary-only setup
 `deja doctor` reports every MCP target as `config missing`, or `not-wired` where the agent
 is installed, which is that setup working as intended. `deja warmup` also leaves a skill at `~/.agents/skills/deja-search/SKILL.md`
-that teaches an agent the CLI contract — `deja search --json`, `ctx`, `blame`, how to read
-`tier` and `total` — so it knows history is searchable without MCP. The copy in the repo is
+that teaches an agent the CLI contract — `deja recall`, `ctx`, `blame`, how to read the
+recall page and ask for the next one — so it knows history is searchable without MCP. The copy in the repo is
 [`skills/deja-search/SKILL.md`](skills/deja-search/SKILL.md).
 
 `deja install --all` is `--auto` without the session-start recall: agents answer from memory
@@ -204,7 +205,7 @@ $ deja "jwt refresh token"
 
 | Command | What it does |
 | --- | --- |
-| `deja <query>` | Search every history. Multi-word is AND and quoted phrases require contiguous text; a query with no exact match then tries word forms and close spellings, which is where a substring reaches its word (`code` finds `opencode`). |
+| `deja <query>` | Search every history. Multi-word is AND and quoted phrases require contiguous text; a query with no exact match then tries word forms and close spellings, which is where a substring reaches its word (`code` finds `opencode`). `--sort date` lists the newest match first. |
 | `deja` | In a terminal, the full-screen search above. `deja brief` prints the text summary instead: today's sessions, what deja served, recent work and a search to try. |
 | `deja wip` | What the last session in this directory was doing: the task, what it settled, the files in flight, the last command and whether it failed — derived from the transcript, not from a note someone remembered to write. |
 | `deja blame <path>[:line]` | Which sessions discussed a file, what was decided, and why. With a line: the commit that last changed it, and the session that wrote that line or the text the commit replaced. `--attribution` prints the line answer alone, as JSON with `--json`, and `--git-note` records it in `refs/notes/deja`. |
@@ -635,6 +636,30 @@ battle-tested paths. Field reports welcome in [#9](https://github.com/vshulcz/de
 </details>
 
 <details>
+<summary><b>One project is spread over several checkouts. Can recall treat them as one?</b></summary>
+
+A project is named after the directory an agent ran in, so every checkout of a
+monorepo, and every worktree made for a task, is a project of its own, and the
+hooks recall only from the one they stand in. List the trees in
+`~/.config/deja/projects`, one `<path> = <name>` per line:
+
+```text
+~/work/monorepo = work
+~/work/worktrees = work
+```
+
+Every directory under a listed path is then that project, for indexing, the
+hooks and recall alike; the longest matching path wins. Editing the file renames
+nothing already indexed: `deja index` and `deja doctor` say when a rebuild is
+due, and `deja index --rebuild` files the sessions whose transcripts are still on
+disk under the new name. Sessions indexed before the file existed still match
+from their own checkout until then; kept sessions whose transcript is gone, and
+`deja remember` notes, keep the name they were filed under. The exclude file wins: a repository excluded by
+its own name stays out, and a pattern for the alias name excludes the whole tree.
+
+</details>
+
+<details>
 <summary><b>How do I wipe everything?</b></summary>
 
 ```sh
@@ -643,7 +668,7 @@ rm -rf ~/.cache/deja ~/.local/share/deja ~/.config/deja
 ```
 
 The index is under `~/.cache/deja`, your `remember` and `promote` notes in
-`~/.local/share/deja`, and the rules, exclude list and hook launcher in
+`~/.local/share/deja`, and the rules, exclude list, project aliases and hook launcher in
 `~/.config/deja` (or under `XDG_DATA_HOME` and `XDG_CONFIG_HOME` when set; on
 Windows the notes are in `%AppData%\deja`).
 

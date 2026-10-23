@@ -1,8 +1,11 @@
+// Package sources reads each AI coding tool's session stores into model.Session values.
 package sources
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/vshulcz/deja-vu/internal/model"
@@ -189,7 +192,7 @@ func AllHarnesses() []Harness { return allHarnesses() }
 
 func allHarnesses() []Harness { return withSubagentSwitch(harnessTable()) }
 
-func harnessTable() []Harness {
+func harnessTable() []Harness { //nolint:funlen // one entry per supported harness
 	return []Harness{
 		{
 			Name: "claude", Load: LoadClaude, Files: ClaudeFiles,
@@ -388,8 +391,8 @@ func harnessTable() []Harness {
 				// token and re-reads by timestamp watermark like the other
 				// db-backed kinds.
 				Name:      "hermes-pg",
-				Match:     func(p string) bool { return IsHermesPGStore(p) },
-				Parse:     func(p string, nano int64) ([]model.Session, error) { return hermesPGRead(p, nano) },
+				Match:     IsHermesPGStore,
+				Parse:     hermesPGRead,
 				ParseFrom: func(p string, _, nano int64) ([]model.Session, error) { return hermesPGRead(p, nano) },
 			}},
 		},
@@ -414,12 +417,7 @@ func harnessTable() []Harness {
 			}, {
 				Name: "goose-db",
 				Match: func(p string) bool {
-					for _, db := range GooseDBs() {
-						if p == db {
-							return true
-						}
-					}
-					return false
+					return slices.Contains(GooseDBs(), p)
 				},
 				Parse:     dbParse(ParseGooseDB, ParseGooseDBSince),
 				ParseFrom: dbParseFrom(ParseGooseDB, ParseGooseDBSince),
@@ -647,12 +645,7 @@ func harnessTable() []Harness {
 					if !hasBase(p, "crush.db") {
 						return false
 					}
-					for _, db := range CrushDBs() {
-						if p == db {
-							return true
-						}
-					}
-					return false
+					return slices.Contains(CrushDBs(), p)
 				},
 				Parse:     dbParse(ParseCrushDB, ParseCrushDBSince),
 				ParseFrom: dbParseFrom(ParseCrushDB, ParseCrushDBSince),
@@ -892,19 +885,26 @@ func IsKnownHarness(name string) bool {
 // and "cline-vscode" are both cline. A caller holding a kind and speaking to a
 // person wants this one — the index run narrates per store, and looking a kind
 // up under the harness's own name found nothing (#2229).
-func HarnessForKind(kind string) string {
+//
+// The names are fixed, so the answer is a table built once: building the
+// registry per call to read it was 1.7 GB of a 12k-session cold build, where
+// every session's narration asks (#5586).
+func HarnessForKind(kind string) string { return kindStores()[kind] }
+
+var kindStores = sync.OnceValue(func() map[string]string {
+	out := map[string]string{}
 	for _, h := range allHarnesses() {
-		if h.Name == kind {
-			return h.Name
+		if _, ok := out[h.Name]; !ok {
+			out[h.Name] = h.Name
 		}
 		for _, k := range h.Kinds {
-			if k.Name == kind {
-				return h.Name
+			if _, ok := out[k.Name]; !ok {
+				out[k.Name] = h.Name
 			}
 		}
 	}
-	return ""
-}
+	return out
+})
 
 // KindForPath returns the fine-grained kind whose Match accepts p, or "".
 func KindForPath(p string) string {

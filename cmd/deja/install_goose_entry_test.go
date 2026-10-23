@@ -46,12 +46,14 @@ func quoteAll(in []string) []string {
 	return out
 }
 
-func gooseBlockEntry(key, exe string) string {
-	cmd, args := mcpCommandArgs(exe)
+func gooseBlockEntry(key string) string {
+	cmd, args := mcpCommandArgs("/bin/deja")
 	s := "  " + key + "\n    enabled: true\n    type: stdio\n    name: deja\n    cmd: " + yamlQuote(cmd) + "\n    args:\n"
+	var sSb52 strings.Builder
 	for _, a := range args {
-		s += "      - " + yamlQuote(a) + "\n"
+		sSb52.WriteString("      - " + yamlQuote(a) + "\n")
 	}
+	s += sSb52.String()
 	return s + "    timeout: 300\n"
 }
 
@@ -62,10 +64,10 @@ func TestInstallGooseEditsADejaKeySpelledAnyWay(t *testing.T) {
 	const exe = "/bin/deja"
 	mine := "  mine:\n    enabled: true\n    type: stdio\n    name: mine\n    cmd: /opt/mine/server\n    args: []\n"
 	for _, tc := range []struct{ name, entry string }{
-		{"double quoted", gooseBlockEntry(`"deja":`, exe)},
-		{"single quoted", gooseBlockEntry(`'deja':`, exe)},
-		{"comment after", gooseBlockEntry(`deja:   # memory`, exe)},
-		{"space before colon", gooseBlockEntry(`deja :`, exe)},
+		{"double quoted", gooseBlockEntry(`"deja":`)},
+		{"single quoted", gooseBlockEntry(`'deja':`)},
+		{"comment after", gooseBlockEntry(`deja:   # memory`)},
+		{"space before colon", gooseBlockEntry(`deja :`)},
 		{"flow", "  deja: " + gooseFlowEntry(exe) + "\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -178,9 +180,11 @@ func TestInstallGooseKnowsItsEntriesAfterGooseRewritesThem(t *testing.T) {
 	gooseHomeForTest(t)
 	cmd, args := mcpCommandArgs(exe)
 	ext := "extensions:\n  deja:\n    enabled: true\n    type: stdio\n    name: deja\n    cmd: " + cmd + "\n    args:\n"
+	var extSb181 strings.Builder
 	for _, a := range args {
-		ext += "    - " + a + "\n"
+		extSb181.WriteString("    - " + a + "\n")
 	}
+	ext += extSb181.String()
 	ext += "    timeout: 60\n  developer:\n    enabled: true\n    type: platform\n    name: developer\n"
 	cfg := ext + "slash_commands:\n- command: deja\n  recipe_path: " + gooseRecipePath() + "\nproviders:\n  openai:\n    enabled: true\nactive_provider: openai\n"
 	path := filepath.Join(gooseConfigDir(), "config.yaml")
@@ -252,5 +256,37 @@ func TestInstallGooseEntryAroundCommentsAndTwoKeys(t *testing.T) {
 	gooseTestConfig(t, "slash_commands:\n- command: deja\n  recipe_path: "+gooseRecipePath()+"\nslash_commands:\n- command: mine\n")
 	if _, err := installGooseCommand(exe, false); err == nil {
 		t.Error("two slash_commands: keys accepted")
+	}
+	// A refused command writes nothing: the recipe used to be written first and
+	// then stayed on disk with no entry pointing at it (#5296).
+	if _, err := os.Stat(gooseRecipePath()); !os.IsNotExist(err) {
+		t.Errorf("a refused duplicate key left the recipe behind: %v", err)
+	}
+	gooseTestConfig(t, "slash_commands: []\n")
+	if _, err := installGooseCommand(exe, false); err == nil {
+		t.Error("an inline slash_commands: value accepted")
+	}
+	if _, err := os.Stat(gooseRecipePath()); !os.IsNotExist(err) {
+		t.Errorf("a refused inline value left the recipe behind: %v", err)
+	}
+}
+
+// The recipe is still refreshed when the config already holds the entry: only
+// a refusal skips it, not the "unchanged" returns.
+func TestInstallGooseCommandRefreshesTheRecipeForAnEntryAlreadyThere(t *testing.T) {
+	const oldExe, newExe = "/old/bin/deja", "/new/bin/deja"
+	gooseTestConfig(t, "slash_commands:\n- command: \"deja\"\n  recipe_path: \""+gooseRecipePath()+"\"\n")
+	if err := os.WriteFile(gooseRecipePath(), []byte(gooseRecipe(oldExe)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := installGooseCommand(newExe, false); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(gooseRecipePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != gooseRecipe(newExe) {
+		t.Errorf("the recipe still runs the old binary:\n%s", got)
 	}
 }

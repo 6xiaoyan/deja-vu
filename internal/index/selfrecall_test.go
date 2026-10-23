@@ -2,9 +2,11 @@ package index
 
 import (
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vshulcz/deja-vu/internal/query"
 )
@@ -87,9 +89,9 @@ func TestIndexDoesNotSwallowItsOwnRecall(t *testing.T) {
 
 	// deja's injection is not.
 	for _, term := range []string{"INJECTEDTOKEN", "deja-recall"} {
-		hits, err := Search(dir, query.Options{Query: term, All: true})
-		if err != nil {
-			t.Fatal(err)
+		hits, searchErr := Search(dir, query.Options{Query: term, All: true})
+		if searchErr != nil {
+			t.Fatal(searchErr)
 		}
 		if len(hits) > 0 {
 			t.Fatalf("%q was indexed from deja's own recall block: %d hits", term, len(hits))
@@ -125,7 +127,7 @@ func TestStripsCodexPreambleOnlyAtTheHead(t *testing.T) {
 		t.Fatalf("a message that is nothing but preamble should strip to empty, got %q", got)
 	}
 	// A person discussing the tag keeps their sentence.
-	for _, real := range []string{
+	for _, genuine := range []string{
 		"why does <environment_context> outrank everything?",
 		"the parser should drop <user_instructions> blocks",
 		"see the note about # AGENTS.md instructions in the issue",
@@ -135,8 +137,8 @@ func TestStripsCodexPreambleOnlyAtTheHead(t *testing.T) {
 		"the injected block is <environment_context><cwd>/w</cwd></environment_context> and it wins on match count",
 		"codex sends <recommended_plugins>a list</recommended_plugins> before the first turn",
 	} {
-		if got := stripSelfRecall(real); got != real {
-			t.Errorf("ate a real message:\n  in  %q\n  out %q", real, got)
+		if got := stripSelfRecall(genuine); got != genuine {
+			t.Errorf("ate a real message:\n  in  %q\n  out %q", genuine, got)
 		}
 	}
 }
@@ -147,12 +149,12 @@ func TestStripsCodexPreambleOnlyAtTheHead(t *testing.T) {
 // Codex injecting these lost their entire question — the exact message someone
 // writes when reporting this.
 func TestAgentsHeadingNeedsItsBlockToFollow(t *testing.T) {
-	real := []string{
+	genuine := []string{
 		"# AGENTS.md instructions\n\nHow do I stop Codex injecting these? Mine is:\n<INSTRUCTIONS>be terse</INSTRUCTIONS>\n",
 		"# AGENTS.md instructions are confusing.\n\nWhy does the block end with </INSTRUCTIONS>?",
 		"# AGENTS.md instructions\n\nno block at all here",
 	}
-	for _, in := range real {
+	for _, in := range genuine {
 		if got := stripSelfRecall(in); got != in {
 			t.Errorf("ate a real message:\n  in  %q\n  out %q", in, got)
 		}
@@ -247,5 +249,150 @@ func TestUnwrapBlockKeepsContents(t *testing.T) {
 	got := unwrapBlock("<user_query>one</user_query> and <user_query>two</user_query>", "<user_query>", "</user_query>")
 	if got != "one and two" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+// A tool result that is nothing but deja's own recall block strips to empty,
+// and a rebuild writes no record for it (#551). The pass that re-reads a
+// changed transcript wrote it anyway, an empty tool-output between the turns
+// (#5555). Each case rewrites its file in place, so the pass is the
+// replacement one, not an append.
+func TestAReReadDropsAToolResultThatIsOnlyRecall(t *testing.T) {
+	const sid = "11111111-2222-4333-8444-555555555555"
+	recall := "<deja-recall>\nRecalled history from prior sessions\n- example hit\n</deja-recall>"
+	at := time.Date(2026, 10, 15, 1, 0, 0, 0, time.UTC)
+	cases := []struct {
+		harness, id string
+		path        func() string
+		body, extra string
+	}{
+		{
+			harness: "claude", id: sid,
+			path: func() string { return filepath.Join(os.Getenv("DEJA_CLAUDE_ROOT"), "demo", sid+".jsonl") },
+			body: hjson(map[string]any{"type": "user", "sessionId": sid, "uuid": "u1", "timestamp": "2026-10-15T01:00:00.000Z", "cwd": "/tmp/demo",
+				"message": map[string]any{"role": "user", "content": "what did we decide about the cache?"}}) +
+				hjson(map[string]any{"type": "assistant", "sessionId": sid, "uuid": "a1", "parentUuid": "u1", "timestamp": "2026-10-15T01:00:01.000Z", "cwd": "/tmp/demo",
+					"message": map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "tool_use", "id": "toolu_1", "name": "mcp__deja__deja", "input": map[string]any{"mode": "recall", "q": "cache"}}}}}) +
+				hjson(map[string]any{"type": "user", "sessionId": sid, "uuid": "u2", "parentUuid": "a1", "timestamp": "2026-10-15T01:00:02.000Z", "cwd": "/tmp/demo",
+					"message": map[string]any{"role": "user", "content": []any{map[string]any{"tool_use_id": "toolu_1", "type": "tool_result", "content": []any{map[string]any{"type": "text", "text": recall}}}}}}) +
+				hjson(map[string]any{"type": "assistant", "sessionId": sid, "uuid": "a2", "parentUuid": "u2", "timestamp": "2026-10-15T01:00:03.000Z", "cwd": "/tmp/demo",
+					"message": map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "text", "text": "We decided to keep the cache."}}}}),
+			extra: hjson(map[string]any{"type": "user", "sessionId": sid, "uuid": "u3", "parentUuid": "a2", "timestamp": "2026-10-15T01:00:04.000Z", "cwd": "/tmp/demo",
+				"message": map[string]any{"role": "user", "content": "more"}}),
+		},
+		{
+			harness: "codex", id: sid,
+			path: func() string {
+				return filepath.Join(os.Getenv("DEJA_CODEX_ROOT"), "sessions", "2026", "10", "15", "rollout-2026-10-15T01-00-00-"+sid+".jsonl")
+			},
+			body: codexLine(at, "session_meta", map[string]any{"id": sid, "cwd": "/tmp/demo"}) +
+				codexLine(at, "response_item", map[string]any{"type": "message", "role": "user",
+					"content": []any{map[string]any{"type": "input_text", "text": "what did we decide about the cache?"}}}) +
+				codexLine(at.Add(time.Second), "response_item", map[string]any{"type": "function_call", "name": "mcp__deja__deja", "call_id": "c1", "arguments": `{"mode":"recall","q":"cache"}`}) +
+				codexLine(at.Add(2*time.Second), "response_item", map[string]any{"type": "function_call_output", "call_id": "c1", "output": recall}) +
+				codexLine(at.Add(3*time.Second), "response_item", map[string]any{"type": "message", "role": "assistant",
+					"content": []any{map[string]any{"type": "output_text", "text": "We decided to keep the cache."}}}),
+			extra: codexLine(at.Add(4*time.Second), "response_item", map[string]any{"type": "message", "role": "user",
+				"content": []any{map[string]any{"type": "input_text", "text": "more"}}}),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.harness, func(t *testing.T) {
+			tmp := hermeticIndexEnv(t)
+			dir := filepath.Join(tmp, "idx")
+			p := tc.path()
+			write(t, p, tc.body)
+			if err := Ensure(dir, "", true, nil); err != nil {
+				t.Fatal(err)
+			}
+			appendTo(t, p, tc.extra)
+			indexPass(t, dir)
+			write(t, p, tc.body)
+			bumpMTime(t, p)
+			var progress strings.Builder
+			if err := Ensure(dir, "", false, &progress); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(progress.String(), replacementPassMarker) {
+				t.Fatalf("the restore did not take the re-read pass, so this measures nothing: %q", progress.String())
+			}
+			s, ok, err := FindByIdentity(dir, tc.harness, tc.id)
+			if err != nil || !ok {
+				t.Fatalf("session gone after the re-read (%v)", err)
+			}
+			for _, m := range s.Messages {
+				if strings.TrimSpace(m.Text) == "" {
+					t.Errorf("the re-read kept an empty %s record", m.Role)
+				}
+			}
+			sessionMatchesRebuild(t, dir, tc.harness, tc.id)
+		})
+	}
+}
+
+// A transcript with nothing to index has no row after a rebuild (#868). The
+// append pass and the re-read pass gave it one with no records under it, an
+// untitled line in `deja last` (#5563).
+func TestAPassGivesNoRowToATranscriptWithNothingToIndex(t *testing.T) {
+	recallOnly := func(sid string) string {
+		return hjson(map[string]any{"type": "user", "sessionId": sid, "uuid": "u2", "timestamp": "2026-10-15T01:00:01.000Z", "cwd": "/tmp/demo",
+			"message": map[string]any{"role": "user", "content": []any{map[string]any{"tool_use_id": "toolu_1", "type": "tool_result",
+				"content": []any{map[string]any{"type": "text", "text": "<deja-recall>\nRecalled history from prior sessions\n- example hit\n</deja-recall>"}}}}}})
+	}
+	hasRow := func(t *testing.T, dir, id string) bool {
+		t.Helper()
+		metas, err := AllMeta(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range metas {
+			if m.ID == id {
+				return true
+			}
+		}
+		return false
+	}
+	for _, tc := range []struct {
+		name, id, marker string
+		change           func(t *testing.T, root string)
+	}{
+		{"a new file, appended", "s-c", "updated 1 file", func(t *testing.T, root string) {
+			t.Helper()
+			write(t, filepath.Join(root, "p", "c.jsonl"), recallOnly("s-c"))
+		}},
+		{"a file that held text, read again", "s-b", replacementPassMarker, func(t *testing.T, root string) {
+			t.Helper()
+			p := filepath.Join(root, "p", "b.jsonl")
+			write(t, p, recallOnly("s-b"))
+			bumpMTime(t, p)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmp := hermeticIndexEnv(t)
+			dir := filepath.Join(tmp, "idx")
+			root := os.Getenv("DEJA_CLAUDE_ROOT")
+			write(t, filepath.Join(root, "p", "a.jsonl"), claudeLine("s-a", "2026-10-15T01:00:00Z", "alpha one"))
+			write(t, filepath.Join(root, "p", "b.jsonl"), claudeLine("s-b", "2026-10-15T01:00:00Z", "beta one"))
+			if err := Ensure(dir, "", true, nil); err != nil {
+				t.Fatal(err)
+			}
+			tc.change(t, root)
+			var progress strings.Builder
+			if err := Ensure(dir, "", false, &progress); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(progress.String(), tc.marker) {
+				t.Fatalf("the pass was not the one this case is about: %q", progress.String())
+			}
+			if hasRow(t, dir, tc.id) {
+				t.Errorf("%s has a row with nothing under it", tc.id)
+			}
+			// The control: the session that holds text keeps its row.
+			if !hasRow(t, dir, "s-a") {
+				t.Error("the pass dropped s-a, which holds text")
+			}
+			sessionMatchesRebuild(t, dir, "claude", tc.id)
+			sessionMatchesRebuild(t, dir, "claude", "s-a")
+		})
 	}
 }

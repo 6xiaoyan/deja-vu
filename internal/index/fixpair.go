@@ -372,7 +372,7 @@ func lastFrictionIndex(ms []model.Message) map[uint64]int {
 		if m.Role != roleToolOutput && m.Role != "assistant" {
 			continue
 		}
-		for _, raw := range strings.Split(m.Text, "\n") {
+		for raw := range strings.SplitSeq(m.Text, "\n") {
 			if line, ok := FrictionLine(raw); ok {
 				last[frictionHash(line)] = i
 			}
@@ -396,7 +396,7 @@ func outputReadsAsFailure(text string) bool {
 	if _, _, ok := firstFrictionLine(text); ok {
 		return true
 	}
-	for _, raw := range strings.Split(text, "\n") {
+	for raw := range strings.SplitSeq(text, "\n") {
 		l := strings.TrimSpace(raw)
 		for _, g := range genericFailure {
 			if strings.HasPrefix(l, g) {
@@ -631,7 +631,7 @@ func opensMoreInput(cmd string) bool {
 // firstFrictionLine returns the first line of a record that names something
 // specific that went wrong, with its hash.
 func firstFrictionLine(text string) (string, uint64, bool) {
-	for _, raw := range strings.Split(text, "\n") {
+	for raw := range strings.SplitSeq(text, "\n") {
 		if line, ok := FrictionLine(raw); ok {
 			return line, frictionHash(line), true
 		}
@@ -645,7 +645,7 @@ func otherFrictionSigs(text string, first uint64) []uint64 {
 	const most = 8
 	var out []uint64
 	seen := map[uint64]bool{first: true}
-	for _, raw := range strings.Split(text, "\n") {
+	for raw := range strings.SplitSeq(text, "\n") {
 		line, ok := FrictionLine(raw)
 		if !ok {
 			continue
@@ -664,8 +664,8 @@ func otherFrictionSigs(text string, first uint64) []uint64 {
 }
 
 func firstLineOf(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
+	if before, _, ok := strings.Cut(s, "\n"); ok {
+		return before
 	}
 	return s
 }
@@ -674,7 +674,7 @@ func firstLineOf(s string) string {
 // specific that went wrong. Callers use it to tell "never seen this error"
 // apart from "that was not an error".
 func LooksLikeError(text string) bool {
-	for _, raw := range strings.Split(text, "\n") {
+	for raw := range strings.SplitSeq(text, "\n") {
 		if _, ok := FrictionLine(raw); ok {
 			return true
 		}
@@ -709,11 +709,8 @@ func mergeFixes(dir, tmp string, live map[string]bool, replacements []model.Sess
 	// leakier build wrote is served until something rewrites it.
 	served, torn := readFixesChecked(dir)
 	changed := torn
-	for _, p := range served {
-		if leaksCredential(p) {
-			changed = true
-			break
-		}
+	if slices.ContainsFunc(served, leaksCredential) {
+		changed = true
 	}
 	kept := make([]FixPair, 0, len(raw))
 	for _, p := range raw {
@@ -953,7 +950,7 @@ func ReadFixes(dir string) []FixPair {
 // held, the very line it had just been given.
 func fixSignaturesFor(dir, text string) map[uint64]bool {
 	sigs := map[uint64]bool{}
-	for _, raw := range strings.Split(text, "\n") {
+	for raw := range strings.SplitSeq(text, "\n") {
 		if line, ok := FrictionLine(raw); ok {
 			sigs[frictionHash(line)] = true
 		}
@@ -964,7 +961,7 @@ func fixSignaturesFor(dir, text string) map[uint64]bool {
 	// Exact lines only, and only after nothing hashed: this is deja recognising
 	// its own wording, not a search for something like it.
 	want := map[string]bool{}
-	for _, raw := range strings.Split(text, "\n") {
+	for raw := range strings.SplitSeq(text, "\n") {
 		if l := strings.ToLower(strings.TrimSpace(raw)); l != "" {
 			want[l] = true
 		}
@@ -1092,10 +1089,8 @@ func remedyIsIrreversible(cmd string) bool {
 		w := strings.Fields(seg)
 		has := func(words ...string) bool {
 			for _, x := range words {
-				for _, y := range w {
-					if y == x {
-						return true
-					}
+				if slices.Contains(w, x) {
+					return true
 				}
 			}
 			return false
